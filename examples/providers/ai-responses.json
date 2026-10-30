@@ -1,0 +1,9 @@
+{
+  "baseUrl": "https://api.example.com/v1/responses",
+  "apiKey": "REPLACE_WITH_AI_API_KEY",
+  "model": "REPLACE_WITH_YOUR_MODEL",
+  "apiFormat": "responses",
+  "maxTokens": 2048,
+  "jsonMode": false,
+  "vision": false
+}

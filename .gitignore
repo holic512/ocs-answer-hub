@@ -1,0 +1,45 @@
+# Dependencies and generated artifacts
+node_modules/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+artifacts/
+
+# Real environments, credentials and application state
+.env
+.env.*
+!.env.example
+!**/.env.example
+state/
+.state*/
+secrets/
+private-config*/
+local-config*/
+backups/
+*.key
+*.pem
+*.p12
+*.pfx
+*.dump
+*.sql.gz
+bootstrap-admin.json
+*-access.json
+
+# Production-specific files must stay local
+/compose.yaml
+/compose.override.yaml
+
+# Local-only historical deployment tools
+scripts/rotate-admin-password.mjs
+scripts/password8-public-browser.mjs
+scripts/upstream-public-acceptance.mjs
+
+# OS/editor/log noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+*.tsbuildinfo

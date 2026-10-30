@@ -1,0 +1,19 @@
+import pg from 'pg';
+export const schema=`
+CREATE TABLE IF NOT EXISTS administrators(id int PRIMARY KEY CHECK(id=1),username text NOT NULL UNIQUE,password_hash text NOT NULL,must_change boolean NOT NULL DEFAULT true,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS sessions(hash text PRIMARY KEY,csrf text NOT NULL,expires_at timestamptz NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS providers(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,kind text NOT NULL CHECK(kind IN ('yanxi','http','ai')),enabled boolean NOT NULL DEFAULT false,priority int NOT NULL,timeout_ms int NOT NULL DEFAULT 12000,config_cipher text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS api_tokens(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),name text NOT NULL,hash text NOT NULL UNIQUE,prefix text NOT NULL,expires_at timestamptz,revoked boolean NOT NULL DEFAULT false,daily_limit int NOT NULL DEFAULT 2000,rpm int NOT NULL DEFAULT 60,usage_day date NOT NULL DEFAULT current_date,day_count int NOT NULL DEFAULT 0,minute_bucket timestamptz NOT NULL DEFAULT date_trunc('minute',now()),minute_count int NOT NULL DEFAULT 0,last_used timestamptz,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS questions(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),fingerprint text NOT NULL UNIQUE,title text NOT NULL,normal_title text NOT NULL,type text NOT NULL,options jsonb NOT NULL DEFAULT '[]',images jsonb NOT NULL DEFAULT '[]',course text NOT NULL DEFAULT '',answer text NOT NULL,source text NOT NULL,verified boolean NOT NULL DEFAULT false,conflict boolean NOT NULL DEFAULT false,deleted boolean NOT NULL DEFAULT false,hit_count int NOT NULL DEFAULT 0,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS question_title_idx ON questions(normal_title);
+CREATE INDEX IF NOT EXISTS question_created_idx ON questions(created_at DESC);
+CREATE TABLE IF NOT EXISTS answer_versions(id bigserial PRIMARY KEY,question_id uuid NOT NULL REFERENCES questions(id),answer text NOT NULL,source text NOT NULL,verified boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS query_events(id bigserial PRIMARY KEY,token_id uuid,title text NOT NULL,status text NOT NULL,source text,question_id uuid,duration_ms int NOT NULL,attempts jsonb NOT NULL DEFAULT '[]',created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS events_date_idx ON query_events(created_at DESC);
+CREATE TABLE IF NOT EXISTS provider_observations(id bigserial PRIMARY KEY,fingerprint text NOT NULL,title text NOT NULL,source text NOT NULL,status text NOT NULL,response_cipher text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS observation_key_idx ON provider_observations(fingerprint);
+CREATE TABLE IF NOT EXISTS settings(id int PRIMARY KEY CHECK(id=1),value jsonb NOT NULL DEFAULT '{}');
+INSERT INTO settings(id,value) VALUES(1,'{}') ON CONFLICT DO NOTHING;
+`;
+export function createPool(url:string){return new pg.Pool({connectionString:url,max:12,connectionTimeoutMillis:5000,idleTimeoutMillis:15000,statement_timeout:8000});}
+export async function migrate(pool:pg.Pool){const c=await pool.connect();try{await c.query('BEGIN');await c.query('SELECT pg_advisory_xact_lock(764002)');await c.query('CREATE TABLE IF NOT EXISTS schema_migrations(version text PRIMARY KEY,applied_at timestamptz NOT NULL DEFAULT now())');await c.query(schema);await c.query("INSERT INTO schema_migrations(version) VALUES('001-initial') ON CONFLICT DO NOTHING");await c.query('COMMIT');}catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}try{await pool.query('CREATE INDEX IF NOT EXISTS question_trgm_idx ON questions USING gin(normal_title gin_trgm_ops)');}catch(e:any){if(!['42704','42883'].includes(e.code))throw e;}}

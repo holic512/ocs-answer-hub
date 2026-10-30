@@ -1,0 +1,38 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    container_name: ocs-answer-hub
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "18771"
+      STATE_DIR: /app/state
+    ports:
+      - "127.0.0.1:18771:18771"
+    volumes:
+      - ./state:/app/state
+    networks:
+      - databases
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 100
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+networks:
+  databases:
+    external: true
+    name: ${DATABASE_NETWORK:?Set the existing database network name}

@@ -1,0 +1,10 @@
+{
+  "url": "https://questions.example.com/query",
+  "method": "POST",
+  "headers": {"Content-Type": "application/json", "Authorization": "Bearer REPLACE_WITH_PROVIDER_TOKEN"},
+  "data": {"title": "${title}", "options": "${options}", "type": "${type}"},
+  "successPath": "code",
+  "successValue": 1,
+  "questionPath": "data.question",
+  "answerPath": "data.answer"
+}

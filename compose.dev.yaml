@@ -1,0 +1,22 @@
+# Isolated local PostgreSQL only; never connects to the existing production DB.
+name: ocs-answer-hub-local
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${PG_LOCAL_USER:?Run npm run setup:local first}
+      POSTGRES_PASSWORD: ${PG_LOCAL_PASSWORD:?Run npm run setup:local first}
+      POSTGRES_DB: ocs_answer_hub_dev
+    ports:
+      - "127.0.0.1:${PG_LOCAL_PORT:-15432}:5432"
+    volumes:
+      - local-postgres:/var/lib/postgresql/data
+      - ./deploy/local/01-create-test.sql:/docker-entrypoint-initdb.d/01-create-test.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d ocs_answer_hub_dev"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+volumes:
+  local-postgres:

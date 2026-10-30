@@ -1,0 +1,47 @@
+{
+  "name": "ocs-answer-hub",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "知序：兼容 OCS 的单用户本地优先题库服务",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "setup:local": "node scripts/setup-local.mjs",
+    "db:up": "docker compose -f compose.dev.yaml up -d --wait",
+    "db:stop": "docker compose -f compose.dev.yaml stop",
+    "dev": "node --env-file-if-exists=.env --import tsx --watch server/index.ts",
+    "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "build": "tsc -p tsconfig.server.json && vite build",
+    "start": "node --env-file-if-exists=.env dist/server/index.js",
+    "test": "node --env-file-if-exists=.env --import tsx --test tests/*.test.ts",
+    "test:browser": "node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "verify": "node --env-file-if-exists=.env scripts/verify.mjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/helmet": "^13.0.2",
+    "@fastify/rate-limit": "^10.3.0",
+    "@fastify/static": "^10.1.8",
+    "fastify": "^5.6.2",
+    "ipaddr.js": "^2.2.0",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "undici": "^7.16.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "playwright": "^1.56.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  }
+}
