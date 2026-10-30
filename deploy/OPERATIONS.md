@@ -154,3 +154,7 @@ npm run test:deployment
 该测试创建独立 PostgreSQL、网络和宿主机临时绑定目录，覆盖首次初始化、预置配置、错误配置、只读挂载、修改后重启、容器重建、模拟新版镜像升级及配置/密钥/数据库数据持久化；结束清理本次测试资源。模拟镜像升级用于验证持久化，不代表 GHCR 发布或线上升级已完成。
 
 真实 GHCR 发布需将工作流提交并推送到 GitHub 后观察 Actions。真实反代、HTTPS、OCS 客户端和供应商调用需要另行验收，不以本地夹具或镜像构建成功代替。
+
+## Python 运维入口
+
+新增 `delpoy/deploy.py`，提供 install、start、restart、update、stop、status、logs、check，复用本文部署目录。使用 Python 3.8+ 标准库，无需 pip 依赖。原 Shell 脚本继续兼容；命令和参数见 `delpoy/README.md`。镜像内同时保存 `/app/defaults/deploy.py`，供服务器取出使用。

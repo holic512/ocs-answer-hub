@@ -25,6 +25,7 @@ const steps=[];
 let activeImage=image;
 let networkCreated=false,postgresCreated=false,upgradeCreated=false;
 const docker=(args,options={})=>execFileSync('docker',args,{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,...options}).trim();
+const operations=args=>execFileSync('python3',['-B','delpoy/deploy.py',...args,'--dir',directory],{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,env:{...process.env,COMPOSE_PROJECT_NAME:project}}).trim();
 const compose=(args,dir=directory)=>docker(['compose','--project-name',dir===preplaced?project+'-preplaced':project,'--project-directory',dir,'-f',path.join(dir,'compose.yml'),...args],{env:{...process.env,APP_IMAGE:activeImage,DATABASE_NETWORK:network,APP_PORT:'0',BIND_ADDRESS:'127.0.0.1'}});
 const helper=(code,input,dir=directory)=>docker(['run','--rm','-i','--user','0:0','--entrypoint','node','--mount',`type=bind,source=${dir},target=/fixture`,image,'-e',code],{input});
 const configText=(origin='https://first.example.com')=>`DB_HOST=postgres\nDB_PORT=5432\nDB_NAME=answer_hub\nDB_USER=postgres\nDB_PASSWORD=isolated-deployment-fixture\nAPP_ORIGIN=${origin}\n`;
@@ -42,12 +43,12 @@ async function healthy(){
 }
 try{
  docker(['image','inspect',image]);
- await fs.copyFile('deploy/compose.yaml',path.join(directory,'compose.yml'));
  docker(['network','create',network]);networkCreated=true;
  docker(['run','-d','--rm','--name',postgres,'--network',network,'--network-alias','postgres','-e','POSTGRES_PASSWORD=isolated-deployment-fixture','-e','POSTGRES_DB=answer_hub','postgres:17-alpine']);postgresCreated=true;
  for(let attempt=0;attempt<40;attempt++){try{docker(['exec',postgres,'pg_isready','-U','postgres']);break;}catch{if(attempt===39)throw new Error('临时 PostgreSQL 未就绪');await new Promise(resolve=>setTimeout(resolve,250));}}
- compose(['config','--quiet']);
- compose(['run','--rm','--no-deps','init']);
+ let firstInstallRejected=false;
+ try{operations(['install','--no-pull','--image',image,'--network',network,'--port','0']);}catch{firstInstallRejected=true;}
+ assert(firstInstallRejected);assert((await fs.stat(path.join(directory,'compose.yml'))).isFile());
  const generated=hash('config/config.env');
  compose(['run','--rm','--no-deps','init']);assert.equal(hash('config/config.env'),generated);
  let rejected=false;try{compose(['run','--rm','--no-deps','app','check']);}catch{rejected=true;}assert(rejected,'默认空数据库密码必须被拒绝');
@@ -59,8 +60,10 @@ try{
  compose(['run','--rm','--no-deps','app','check'],preplaced);
  steps.push('首次部署前预置配置完整保留；省略可选字段时使用默认值');
 
- writeConfig(configText());compose(['run','--rm','--no-deps','app','check']);
- compose(['up','-d','--wait','--wait-timeout','120','--pull','never']);await healthy();
+ writeConfig(configText());operations(['start']);await healthy();
+ const installedConfig=hash('config/config.env');
+ operations(['install','--no-pull']);assert.equal(hash('config/config.env'),installedConfig);
+ operations(['check']);operations(['status']);operations(['logs','--tail','5']);
  assert.equal(inspect().Mounts.find(m=>m.Destination==='/app/config').RW,false);
  assert.equal(inspect().Config.Env.some(v=>v.startsWith('DB_PASSWORD=')),false);
  assert.equal(probeOrigin('https://first.example.com'),401);
@@ -70,7 +73,7 @@ try{
  steps.push('只读配置挂载、非 root 启动和自动迁移成功；数据库密码未注入容器环境');
 
  writeConfig(configText('https://second.example.com'));const customized=hash('config/config.env');
- compose(['restart','app']);await healthy();
+ operations(['restart']);await healthy();
  assert.equal(probeOrigin('https://second.example.com'),401);assert.equal(probeOrigin('https://first.example.com'),403);
  steps.push('修改访问地址后仅重启容器，新地址生效，旧地址被拒绝');
 
@@ -82,7 +85,8 @@ try{
  const oldImage=inspect().Image;
  docker(['buildx','build','--load','-t',upgrade,'-f','-','.'],{input:`FROM ${image}\nUSER root\nRUN printf '\\n# 新镜像的模板变更，旧配置不会被覆盖\\n' >> /app/defaults/config.env\nLABEL deployment.verification=next\nUSER node\n`});upgradeCreated=true;
  activeImage=upgrade;
- compose(['up','-d','--wait','--wait-timeout','120','--pull','never']);await healthy();
+ operations(['update','--no-pull','--image',upgrade]);await healthy();
+ assert((await fs.readFile(path.join(directory,'.env'),'utf8')).includes('APP_IMAGE='+upgrade));
  assert.notEqual(inspect().Image,oldImage);assert.equal(hash('config/config.env'),customized);assert.equal(hash('storage/master.key'),key);
  assert.equal(helper("console.log(require('fs').readFileSync('/fixture/storage/persistence-fixture','utf8'))"),'preserved');
  assert.equal(docker(['exec',postgres,'psql','-U','postgres','-d','answer_hub','-tAc',"SELECT value->>'deployment_fixture' FROM settings WHERE id=1"]),'preserved');
@@ -93,6 +97,9 @@ try{
  try{compose(['run','--rm','--no-deps','app','check']);}catch(error){invalidRejected=true;assert(!String(error.stderr).includes('isolated-deployment-fixture'));}
  assert(invalidRejected);writeConfig(configText('https://second.example.com'));
  steps.push('无效配置在启动前被拒绝，错误输出不包含配置密码');
+ operations(['stop']);const stoppedId=compose(['ps','--all','-q','app']);assert.equal(JSON.parse(docker(['inspect',stoppedId]))[0].State.Running,false);
+ operations(['start']);await healthy();assert.equal(hash('storage/master.key'),key);
+ steps.push('Python 运维 install/start/restart/update/stop/status/logs/check 均通过；安装更新使用已有本地镜像，未测试远程拉取');
  console.log(JSON.stringify({passed:true,scope:'本地真实 Docker Compose、独立 PostgreSQL、宿主机目录绑定；升级使用本地模拟新版镜像，未发布 GHCR',steps},null,2));
 }finally{
  try{compose(['down','--remove-orphans']);}catch{}

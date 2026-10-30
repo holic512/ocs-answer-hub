@@ -16,6 +16,8 @@
 !deploy/config.env.example
 !deploy/compose.yaml
 !deploy/deploy.sh
+!delpoy
+!delpoy/deploy.py
 
 # 即使出现在源码子目录中，也不发送真实环境和私密文件。
 **/.env

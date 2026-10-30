@@ -78,3 +78,7 @@ AI 支持 Chat Completions、Responses 的最终回答、文本块与 data/resul
 ## GHCR 镜像部署
 
 GitHub Actions 自动构建完整镜像，main 发布 latest，版本 Tag 发布对应版本。服务器使用 `deploy/deploy.sh` 拉取并部署，应用运行配置外置到 `data/ocs-answer-hub/config/config.env`，状态保存在 `storage/`，修改应用配置后重启即可生效。首次生成模板后需填写数据库密码。完整命令、升级及旧版迁移见 [部署与恢复](deploy/OPERATIONS.md)。
+
+## Python 基础运维
+
+`python3 delpoy/deploy.py install` 提供安装入口，并支持 start、restart、update、stop、status、logs、check。仅使用 Python 3.8+ 标准库，复用现有 Docker Compose 和外置配置。服务器建议通过 `--dir` 指定绝对部署路径。详见 [Python 运维说明](delpoy/README.md)。

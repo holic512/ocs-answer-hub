@@ -49,3 +49,7 @@ Thumbs.db
 /config/
 /storage/
 **/config.env
+
+# Python 运维脚本缓存
+__pycache__/
+*.py[cod]

@@ -25,6 +25,8 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - name: Python 运维脚本测试
+        run: python3 -B -m unittest discover -s tests -p test_deploy.py
       - run: npm run typecheck
       - run: npm test
         env:
