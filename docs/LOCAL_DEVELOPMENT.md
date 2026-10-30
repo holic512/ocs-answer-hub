@@ -43,8 +43,13 @@ Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。
 | `.env.example` | 本地环境变量示例 |
 | `.env`、`state/`、`artifacts/` | 私密/生成文件，不入 Git |
 
-## 当前交接边界
+## 开发产物清理
 
-源码包含已上线的 AI 最终回答兼容修复；本轮增加的配置、文档、脚本可移植性调整仅用于开发仓库，**没有部署到线上**。
+先停止开发服务或验收任务，再执行：
 
-私密配置包中的 `production/.env` 和 `production/compose.yaml` 是只读备存，不是本地启动入口。线上题库、供应商实际配置、管理员账号、OCS 凭证继续留在原数据库中；本轮不导出或迁移。新电脑按上述步骤建立全新隔离环境即可。
+```sh
+node scripts/clean.mjs --dry-run
+node scripts/clean.mjs
+```
+
+脚本仅清理固定目录中的构建产物、验收报告和工具缓存；保留依赖本身、配置、数据库、密钥及备份。需要保留的验收证据请先移出 `artifacts/`。清理后 `npm run dev` 可直接启动，打包时重新执行 `npm run build`。

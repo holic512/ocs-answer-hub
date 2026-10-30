@@ -46,6 +46,30 @@ test('local setup generates matching private env and never overwrites it',async(
  }finally{await fs.rm(directory,{recursive:true,force:true});}
 });
 
+test('development cleanup previews artifacts and preserves dependencies and runtime data',async()=>{
+ const directory=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-clean-'));
+ try{
+  await fs.mkdir(path.join(directory,'scripts'));
+  const script=path.join(directory,'scripts/clean.mjs');
+  await fs.copyFile(path.join(root,'scripts/clean.mjs'),script);
+  const generated=['dist/server/app.js','artifacts/verification/report.json','node_modules/.cache/tool/result'];
+  const preserved=['.env','storage/master.key','state/master.key','data/config/config.env','config/config.env','backups/database.dump','node_modules/tool/package.json','notes.txt'];
+  for(const file of [...generated,...preserved]){
+   await fs.mkdir(path.dirname(path.join(directory,file)),{recursive:true});
+   await fs.writeFile(path.join(directory,file),'fixture');
+  }
+  const run=(...args:string[])=>spawnSync(process.execPath,[script,...args],{cwd:os.tmpdir(),encoding:'utf8'});
+  let result=run('--dry-run');assert.equal(result.status,0,result.stderr);
+  for(const file of generated)assert.equal(await fs.readFile(path.join(directory,file),'utf8'),'fixture');
+  result=run('--unknown');assert.equal(result.status,1);
+  for(const file of generated)assert.equal(await fs.readFile(path.join(directory,file),'utf8'),'fixture');
+  result=run();assert.equal(result.status,0,result.stderr);
+  for(const file of generated)await assert.rejects(fs.stat(path.join(directory,file)),{code:'ENOENT'});
+  for(const file of preserved)assert.equal(await fs.readFile(path.join(directory,file),'utf8'),'fixture');
+  result=run();assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/没有需要清理/);
+ }finally{await fs.rm(directory,{recursive:true,force:true});}
+});
+
 
 test('database fields encode literal credentials and validate required fields and port',()=>{
  const env={DB_HOST:'127.0.0.1',DB_PORT:'5432',DB_NAME:'题库',DB_USER:'user@local',DB_PASSWORD:'p@ss:# /?%',TEST_DB_NAME:'hub_test'};
