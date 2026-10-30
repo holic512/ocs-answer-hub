@@ -25,7 +25,7 @@ Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；�
 
 ## 部署升级
 
-先备份数据库与 `state/master.key`，执行构建后再部署。Docker 镜像包含 Prisma 客户端、迁移工具、模型与迁移文件；启动会按顺序应用新迁移。也可以在启动前手动运行 `npm run db:migrate`，用 `npm run db:status` 查看状态。迁移账号需要相应的建表、改表权限。
+先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、模型与迁移文件；启动会按顺序应用新迁移。也可以在启动前手动运行 `npm run db:migrate`，用 `npm run db:status` 查看状态。迁移账号需要相应的建表、改表权限。
 
 迁移版本与应用版本分别记录：应用版本是 `1.0.0` 等版本号，数据库版本是按时间排序的迁移目录。发布包含哪些迁移由该提交内的迁移目录确定；不提供自动降级或自动删除业务数据。
 

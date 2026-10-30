@@ -43,3 +43,9 @@ Thumbs.db
 .vscode/
 *.log
 *.tsbuildinfo
+
+# 外置部署配置与持久数据
+/data/
+/config/
+/storage/
+**/config.env

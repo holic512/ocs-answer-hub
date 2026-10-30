@@ -1,39 +1,66 @@
-# 应用部署模板：从项目根目录运行，数据库使用已有外部网络。
+# 保存为 data/ocs-answer-hub/compose.yml。
+# 同目录 .env 仅保存镜像、网络、端口等 Compose 参数，不存放应用密码。
+x-runtime: &runtime
+  image: ${APP_IMAGE:-ghcr.io/holic512/ocs-answer-hub:latest}
+  environment:
+    CONFIG_FILE: /app/config/config.env
+    NODE_ENV: production
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:size=32m,noexec,nosuid
+
 services:
-  app:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-    container_name: ocs-answer-hub
-    restart: unless-stopped
-    env_file: .env # 数据库五项和应用域名由根目录 .env 提供
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: "18771"
-      STATE_DIR: /app/state
-    ports:
-      - "127.0.0.1:18771:18771"
+  init:
+    <<: *runtime
+    # 仅初始化目录及缺失文件；不覆盖用户已有配置。
+    user: "0:0"
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    command: [init]
+    restart: "no"
+    network_mode: none
     volumes:
-      - ./state:/app/state
+      - ./config:/app/config
+      - ./storage:/app/storage
+
+  app:
+    <<: *runtime
+    restart: unless-stopped
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-18771}:18771"
+    volumes:
+      - type: bind
+        source: ./config
+        target: /app/config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./storage
+        target: /app/storage
+        bind:
+          create_host_path: false
     networks:
       - databases
     mem_limit: 512m
     cpus: 1.0
     pids_limit: 100
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp:size=32m,noexec,nosuid
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
 networks:
   databases:
     external: true
-    name: ${DATABASE_NETWORK:?请填写已有数据库的 Docker 网络名称}
+    name: ${DATABASE_NETWORK:-databases}

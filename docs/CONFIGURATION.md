@@ -2,7 +2,7 @@
 
 ## 最少需要填写的数据库配置
 
-本地使用项目根 `.env`，示例见 `.env.example`；新容器部署参考 `deploy/.env.example`。示例与实际配置使用同一组字段。不再使用 `DATABASE_URL`、`TEST_DATABASE_URL` 或 `PG_LOCAL_*`。
+本地使用项目根 `.env`，示例见 `.env.example`；镜像部署使用 `config/config.env`，参考 `deploy/config.env.example`；`deploy/.env.example` 仅配置镜像、网络和宿主机端口。示例与实际配置使用同一组字段。不再使用 `DATABASE_URL`、`TEST_DATABASE_URL` 或 `PG_LOCAL_*`。
 
 ```dotenv
 # 数据库地址，不带协议和端口
@@ -30,7 +30,7 @@ DB_PASSWORD="请填写数据库密码"
 | --- | --- |
 | `APP_ORIGIN` | 浏览器实际访问地址，不带末尾 `/`；开发为 `http://127.0.0.1:5173`，构建后直连为 `http://127.0.0.1:18771` |
 | `HOST` / `PORT` | 后端监听地址和端口，默认 `127.0.0.1` / `18771` |
-| `STATE_DIR` | 保存主密钥和首次凭据；本地 `./state`，容器 `/app/state` |
+| `STATE_DIR` | 保存主密钥和首次凭据；本地 `./state`，新镜像容器 `/app/storage` |
 | `MASTER_KEY` | 高级可选项，64 位十六进制；默认自动生成并保存，不可随意更换 |
 | `UPSTREAM_ALLOW_HOSTS` | 高级可选项，私网上游精确主机/IP 白名单，英文逗号分隔，默认空 |
 | `DATABASE_NETWORK` | 仅容器部署使用，已有数据库的 Docker 外部网络名 |
@@ -71,3 +71,7 @@ DB_PASSWORD="请填写数据库密码"
 - 只接受完整的最终答案 JSON；推理片段、工具调用、截断和业务错误不视为答案。
 
 不要把真实 token / apiKey 写回示例或 Git。需要私密保存时使用 Git 已忽略的本地文件；网页后台保存的有效配置仍在数据库中。
+
+## 镜像外置配置
+
+设置 CONFIG_FILE 时，服务端每次启动重新读取该文件。文件值优先于同名环境变量，可选字段缺失时使用默认值；不会自动补写或覆盖已有配置。外置配置支持中文注释，需每项单独一行，不接受未知字段、重复字段或跨行值。完整部署流程见 `deploy/OPERATIONS.md`。本地开发未设置 CONFIG_FILE 时继续使用根 .env，兼容原开发流程。

@@ -1,7 +1,22 @@
-import {databaseUrl} from './config.js';
-import {buildApp} from './app.js';import path from 'node:path';import {fileURLToPath} from 'node:url';
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-const {app}=await buildApp({databaseUrl:databaseUrl()!,origin:process.env.APP_ORIGIN??'http://127.0.0.1:18771',stateDir:process.env.STATE_DIR??path.join(root,'state'),key:process.env.MASTER_KEY,staticDir:path.join(root,'dist/web'),allowHosts:(process.env.UPSTREAM_ALLOW_HOSTS??'').split(',').map(x=>x.trim()).filter(Boolean)});
-await app.listen({host:process.env.HOST??'127.0.0.1',port:Number(process.env.PORT??18771)});
-console.log(`OCS Answer Hub ready on port ${process.env.PORT??18771}; credentials stored privately in STATE_DIR`);
+/**
+ * @file index.ts
+ * @project ocs-answer-hub
+ * @module 服务启动
+ * @description 加载服务器私有运行配置，完成数据库迁移后启动 HTTP 服务。
+ * @logic 每次进程启动重新读配置、初始化应用、监听端口、处理退出信号。
+ * @dependencies config, app, node:path
+ * @index_tags startup, runtime-config
+ * @author holic512
+ */
+import {loadRuntimeConfig} from './config.js';
+import {buildApp} from './app.js';
+import path from 'node:path';
+import {existsSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+const parent=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const root=existsSync(path.join(parent,'prisma'))?parent:path.dirname(parent);
+const config=loadRuntimeConfig();
+const {app}=await buildApp({databaseUrl:config.databaseUrl,origin:config.origin,stateDir:config.stateDir,key:config.key,staticDir:path.join(root,'dist/web'),allowHosts:config.allowHosts});
+await app.listen({host:config.host,port:config.port});
+console.log(`知序已启动，监听端口 ${config.port}；凭据保存在状态目录中`);
 for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{app.close().then(()=>process.exit(0));});

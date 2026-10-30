@@ -74,3 +74,7 @@ AI 支持 Chat Completions、Responses 的最终回答、文本块与 data/resul
 ## 数据库与版本管理
 
 数据库结构由 Prisma Schema 和版本迁移管理，启动自动应用待执行迁移。系统初始版本为 `1.0.0`，提交时自动递增补丁号，超过 20 后次版本号进一。详见 [数据库迁移与系统版本](docs/DATABASE_AND_VERSIONING.md)。
+
+## GHCR 镜像部署
+
+GitHub Actions 自动构建完整镜像，main 发布 latest，版本 Tag 发布对应版本。服务器使用 `deploy/deploy.sh` 拉取并部署，应用运行配置外置到 `data/ocs-answer-hub/config/config.env`，状态保存在 `storage/`，修改应用配置后重启即可生效。首次生成模板后需填写数据库密码。完整命令、升级及旧版迁移见 [部署与恢复](deploy/OPERATIONS.md)。
