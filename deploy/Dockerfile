@@ -8,6 +8,10 @@ WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY package.json ./
 COPY dist ./dist
+COPY prisma ./prisma
+COPY prisma.config.ts ./prisma.config.ts
+COPY server/config.ts ./server/config.ts
+RUN node node_modules/@prisma/engines/scripts/postinstall.js && node node_modules/prisma/build/index.js generate
 RUN mkdir -p /app/state && chown -R node:node /app
 USER node
 EXPOSE 18771

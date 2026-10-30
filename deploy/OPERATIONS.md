@@ -5,7 +5,7 @@
 ## 新部署
 
 1. 准备独立 PostgreSQL 数据库与低权限项目角色，启用 pg_trgm。禁止应用使用数据库管理员。
-2. 在仓库根 `npm ci && npm run build`。Dockerfile 使用预构建的 `dist`，不是自动从 TS 构建；源码克隆后不能跳过此步。
+2. 在仓库根 `npm ci && npm run build`。构建会生成 Prisma 客户端；Dockerfile 使用预构建的 `dist`，不是自动从 TS 构建；源码克隆后不能跳过此步。
 3. 将 `deploy/compose.yaml` 复制为仓库根 `compose.yaml`，`deploy/.env.example` 复制为根 `.env` 并填写当前部署真实值，私密文件权限 0600，**不要把本地开发 .env 覆盖成生产配置**。
 4. 配置 `DATABASE_NETWORK` 为已有数据库外部 Docker 网络，`DB_HOST`为该网络可访问的地址，`APP_ORIGIN` 为准确的 HTTPS 访问域名。
 5. 创建 `state/`（容器 UID 1000 可写，目录0700）；`docker compose build app && docker compose up -d app`。只管理应用，不重建共享数据库/其他服务。
@@ -13,7 +13,7 @@
 
 容器内 `HOST=0.0.0.0`、`STATE_DIR=/app/state` 由 compose 明确设置，不表示数据库公开。主机的可访问地址和容器内地址不是一回事。
 
-首次启动管理员凭据在 `state/bootstrap-admin.json`，改密后删除；`state/master.key` 必须持久保存。已有管理员不会因为更新而重置。
+首次启动管理员凭据在 `state/bootstrap-admin.json`，改密后删除；`state/master.key` 必须持久保存。已有管理员不会因为更新而重置。启动会先应用 Prisma 待执行迁移，失败则停止启动；迁移及旧库接管规则见 `docs/DATABASE_AND_VERSIONING.md`。
 
 ## 更新与验收
 

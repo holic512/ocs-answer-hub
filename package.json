@@ -1,7 +1,7 @@
 {
   "name": "ocs-answer-hub",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "知序：兼容 OCS 的单用户本地优先题库服务",
   "engines": {
@@ -13,18 +13,26 @@
     "db:stop": "docker compose -f compose.dev.yaml stop",
     "dev": "node --env-file-if-exists=.env --import tsx --watch server/index.ts",
     "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
-    "build": "tsc -p tsconfig.server.json && vite build",
+    "build": "npm run db:generate && tsc -p tsconfig.server.json && vite build",
     "start": "node --env-file-if-exists=.env dist/server/index.js",
     "test": "node --env-file-if-exists=.env --import tsx --test tests/*.test.ts",
     "test:browser": "node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "verify": "node --env-file-if-exists=.env scripts/verify.mjs"
+    "verify": "node --env-file-if-exists=.env scripts/verify.mjs",
+    "db:generate": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate",
+    "db:migrate": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy",
+    "db:status": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status",
+    "db:migration": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate dev --create-only --name",
+    "prepare": "node scripts/install-hooks.mjs",
+    "postinstall": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
     "@fastify/helmet": "^13.0.2",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^10.1.8",
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
     "@radix-ui/react-dialog": "^1.3.1",
     "@radix-ui/react-slot": "^1.5.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -39,7 +47,8 @@
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
     "undici": "^7.16.0",
-    "zod": "^4.1.12"
+    "zod": "^4.1.12",
+    "prisma": "^7.10.1"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

@@ -49,3 +49,5 @@
 - 480px 以下缩小外边距、折行操作区，表格在局部容器横向滚动。
 - 尊重 prefers-reduced-motion；状态不能仅靠颜色表达。
 - 删除和撤销仍使用已有浏览器确认，保留现有业务语义。
+
+系统页脚显示构建时从 package.json 注入的应用版本，版本递增规则见 docs/DATABASE_AND_VERSIONING.md。

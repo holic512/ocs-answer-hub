@@ -1,0 +1,4 @@
+#!/bin/sh
+# 每次提交从当前 HEAD 的版本递增，失败重试不会重复累加。
+set -eu
+node scripts/bump-version.mjs

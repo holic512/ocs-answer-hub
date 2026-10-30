@@ -1,0 +1,2 @@
+# 数据库迁移使用 PostgreSQL，不要手工修改已发布迁移。
+provider = "postgresql"

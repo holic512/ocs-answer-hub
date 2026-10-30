@@ -14,7 +14,7 @@ Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。
 
 ## 不使用 Docker
 
-手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 和 `ocs_answer_hub_test` 两个**仅本地开发**的数据库，授权开发角色在各自 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行幂等建表。
+手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 和 `ocs_answer_hub_test` 两个**仅本地开发**的数据库，授权开发角色在各自 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行 Prisma 版本迁移。修改模型和提交版本规则见 `docs/DATABASE_AND_VERSIONING.md`。
 
 `compose.dev.yaml` 使用的 PostgreSQL超级用户仅适用于回环地址上的隔离开发，不能直接照搬生产；生产必须使用独立低权限角色。
 

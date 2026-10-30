@@ -8,7 +8,7 @@ if(!process.env.TEST_DB_NAME||process.env.TEST_DATABASE_RESET!=='1'){
 const evidence=path.resolve(process.env.EVIDENCE_DIR??'artifacts/verification');
 mkdirSync(evidence,{recursive:true,mode:0o700});
 function collect(directory){return readdirSync(directory).flatMap(name=>{const file=path.join(directory,name);return statSync(file).isDirectory()?collect(file):[file];});}
-const files=['server','web','tests','scripts','deploy'].filter(existsSync).flatMap(collect).concat(['package.json','package-lock.json','vite.config.ts','tsconfig.json','tsconfig.server.json','compose.dev.yaml','.env.example','.dockerignore']);
+const files=['server','web','tests','scripts','deploy','prisma','.githooks'].filter(existsSync).flatMap(collect).concat(['package.json','package-lock.json','vite.config.ts','tsconfig.json','tsconfig.server.json','compose.dev.yaml','prisma.config.ts','.env.example','.dockerignore']);
 const hash=createHash('sha256');for(const file of files.sort())hash.update(file).update(readFileSync(file));
 const sourceHash=hash.digest('hex');
 const commands=[['test'],['run','typecheck'],['run','build'],['audit','--omit=dev','--registry=https://registry.npmjs.org']];

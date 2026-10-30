@@ -1,0 +1,110 @@
+// 旧系统 001-initial 的固定结构快照，仅用于首次接管校验，不随业务结构更新。
+// 知序数据库结构。修改后运行 npm run db:migration -- 版本说明生成迁移，勿修改已发布迁移。
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+}
+
+model administrators {
+  id            Int      @id
+  username      String   @unique
+  password_hash String
+  must_change   Boolean  @default(true)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+}
+model sessions {
+  hash       String   @id
+  csrf       String
+  expires_at DateTime @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+model providers {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  kind          String
+  enabled       Boolean  @default(false)
+  priority      Int
+  timeout_ms    Int      @default(12000)
+  config_cipher String
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+}
+model api_tokens {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  hash          String    @unique
+  prefix        String
+  expires_at    DateTime? @db.Timestamptz(6)
+  revoked       Boolean   @default(false)
+  daily_limit   Int       @default(2000)
+  rpm           Int       @default(60)
+  usage_day     DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  day_count     Int       @default(0)
+  minute_bucket DateTime  @default(dbgenerated("date_trunc('minute'::text, now())")) @db.Timestamptz(6)
+  minute_count  Int       @default(0)
+  last_used     DateTime? @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+}
+model questions {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fingerprint   String   @unique
+  title         String
+  normal_title  String
+  type          String
+  options       Json     @default("[]")
+  images        Json     @default("[]")
+  course        String   @default("")
+  answer        String
+  source        String
+  verified      Boolean  @default(false)
+  conflict      Boolean  @default(false)
+  deleted       Boolean  @default(false)
+  hit_count     Int      @default(0)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @db.Timestamptz(6)
+  versions      answer_versions[]
+  @@index([normal_title], map: "question_title_idx")
+  @@index([normal_title(ops: raw("gin_trgm_ops"))], type: Gin, map: "question_trgm_idx")
+  @@index([created_at(sort: Desc)], map: "question_created_idx")
+}
+model answer_versions {
+  id          BigInt    @id @default(autoincrement())
+  question_id String    @db.Uuid
+  answer      String
+  source      String
+  verified    Boolean   @default(false)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  question    questions @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+model query_events {
+  id          BigInt   @id @default(autoincrement())
+  token_id    String?  @db.Uuid
+  title       String
+  status      String
+  source      String?
+  question_id String?  @db.Uuid
+  duration_ms Int
+  attempts    Json     @default("[]")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  @@index([created_at(sort: Desc)], map: "events_date_idx")
+}
+model provider_observations {
+  id              BigInt   @id @default(autoincrement())
+  fingerprint     String
+  title           String
+  source          String
+  status          String
+  response_cipher String
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  @@index([fingerprint], map: "observation_key_idx")
+}
+model settings {
+  id    Int  @id
+  value Json @default("{}")
+}
+// 保留旧系统的迁移记录，用于已有数据库平滑接入。
+model schema_migrations {
+  version    String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
