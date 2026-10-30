@@ -22,7 +22,7 @@
 - 支持言溪、通用 HTTP 及 OpenAI 兼容接口；来源可排序、启停和单独测试，本地题库始终优先。
 - 为 OCS 生成独立调用凭证与题库配置，支持限速、每日额度和凭证撤销。
 - 展示查询统计及脱敏诊断；AI 答案标记为未核验，不能保证答案正确。
-- 应用运行配置外置，重启加载；启动自动执行待应用的数据库版本迁移。
+- 应用运行配置外置，重启加载；运行日志持久化并自动轮转，启动自动执行待应用的数据库版本迁移。
 
 ## 服务器安装（推荐）
 
@@ -130,6 +130,8 @@ ssh -L 18771:127.0.0.1:18771 用户名@服务器地址
 ├── .env                # 仅 Docker 镜像、网络、宿主机端口参数
 ├── config/
 │   └── config.env      # 应用运行配置及数据库凭据
+├── logs/
+│   └── app.log         # 运行日志，自动轮转
 └── storage/
     └── master.key      # 自动生成的加密主密钥，必须保留
 ```
@@ -169,6 +171,19 @@ python3 deploy.py update --dir /data/ocs-answer-hub --image ghcr.io/holic512/ocs
 首次安装或更新可使用 `--bind`、`--port` 调整宿主机监听参数；离线导入镜像后可加 `--no-pull`。完整参数见 [Python 运维说明](delpoy/README.md)。
 
 升级前备份 PostgreSQL、`config/config.env`、`storage/`、`compose.yml` 和部署参数 `.env`。迁移失败时应用停止启动，不会清空数据库；脚本不会自动回滚数据库。恢复时应停止应用，并恢复同一备份时点的数据库及密钥。
+
+### 日志文件
+
+Docker 部署将应用日志保存到 `/data/ocs-answer-hub/logs/app.log`，同时保留 Docker 控制台输出。日志采用 JSON 行格式，记录 UTC 时间、级别和消息；单文件达到 10 MiB 后轮转，最多保留 `app.log.1`～`app.log.3` 三份历史文件。启动、API 请求、管理操作、查题回退及来源测试诊断都会落盘，无需增加配置项。页面显示的请求编号可关联对应日志；详细事件和排错方法见[日志与追溯](docs/LOGGING.md)。
+
+```sh
+tail -n 100 /data/ocs-answer-hub/logs/app.log
+tail -f /data/ocs-answer-hub/logs/app.log
+```
+
+重启、重新创建及镜像升级均保留宿主机日志。本地开发日志保存在项目根目录 `logs/app.log`，开发清理脚本不删除运行日志。
+
+已有部署的 `compose.yml` 不会被脚本覆盖；升级到日志持久化版本前，需按[部署说明](deploy/OPERATIONS.md#已有部署增加日志挂载)补充 `logs/` 挂载，再重新创建容器。
 
 ## 使用与 OCS 接入
 
@@ -238,7 +253,7 @@ node scripts/clean.mjs
 
 清理范围为构建产物 `dist/`、验收报告与截图 `artifacts/`、覆盖率报告、Playwright 报告、Vite / 工具缓存及运维测试 Python 缓存。需要保留的验收证据应先移出这些目录。
 
-脚本不清理 `node_modules` 依赖本身、`.env`、`data/`、`config/`、`state/`、`storage/`、备份、数据库、Docker 容器或数据卷。清理后可直接 `npm run dev`，需要打包时重新运行 `npm run build`。
+脚本不清理 `node_modules` 依赖本身、`.env`、`data/`、`config/`、`state/`、`storage/`、`logs/`、备份、数据库、Docker 容器或数据卷。清理后可直接 `npm run dev`，需要打包时重新运行 `npm run build`。
 
 ## 常见问题
 
@@ -266,6 +281,7 @@ node scripts/clean.mjs
 | [Python 运维](delpoy/README.md) | 安装、启停、更新、日志及离线参数 |
 | [本地开发](docs/LOCAL_DEVELOPMENT.md) | 开发环境、测试隔离及目录说明 |
 | [数据库与版本](docs/DATABASE_AND_VERSIONING.md) | Prisma 迁移与每次提交的版本递增规则 |
+| [日志与追溯](docs/LOGGING.md) | 请求编号、操作审计、查题链路、脱敏及排错方法 |
 | [界面规范](DESIGN.md) | 现有组件、间距、圆角和交互约定 |
 
 应用版本取自 `package.json`；每次提交递增补丁号，超过 20 时次版本号加一。仓库当前未提供 LICENSE 文件，使用和分发前请与维护者确认授权。

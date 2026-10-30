@@ -43,7 +43,7 @@ test('development cleanup previews artifacts and preserves dependencies and runt
   const script=path.join(directory,'scripts/clean.mjs');
   await fs.copyFile(path.join(root,'scripts/clean.mjs'),script);
   const generated=['dist/server/app.js','artifacts/verification/report.json','node_modules/.cache/tool/result'];
-  const preserved=['.env','storage/master.key','state/master.key','data/config/config.env','config/config.env','backups/database.dump','node_modules/tool/package.json','notes.txt'];
+  const preserved=['.env','storage/master.key','state/master.key','data/config/config.env','config/config.env','logs/app.log','backups/database.dump','node_modules/tool/package.json','notes.txt'];
   for(const file of [...generated,...preserved]){
    await fs.mkdir(path.dirname(path.join(directory,file)),{recursive:true});
    await fs.writeFile(path.join(directory,file),'fixture');

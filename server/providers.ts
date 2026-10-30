@@ -13,7 +13,7 @@ import {canonicalAnswer,prepare,fuzzySafe,compact,type Prepared} from './search.
 export type Provider={id:string;name:string;kind:'yanxi'|'http'|'ai';enabled:boolean;priority:number;timeout_ms:number;config:any};
 export type ProviderResult={answer:string;question:string;usage?:any;ai:boolean};
 export type Transport=typeof safeRequest;
-export type ProviderDiagnostic={stage:'provider'|'mapping'|'answer';status:'passed'|'failed'|'no_answer';message:string;code?:string};
+export type ProviderDiagnostic={stage:'provider'|'mapping'|'answer';status:'passed'|'failed'|'no_answer';message:string;code?:string;details?:{answerType?:string;answer?:unknown;questionType?:string;choices?:string[];output?:string}};
 export type Diagnose=(event:ProviderDiagnostic)=>void;
 export function at(obj:any,path:string){return path.split('.').filter(Boolean).reduce((v,k)=>k==='__proto__'||k==='constructor'||k==='prototype'?undefined:v?.[k],obj);}
 function template(v:any,env:any):any{if(Array.isArray(v))return v.map(x=>template(x,env));if(v&&typeof v==='object')return Object.fromEntries(Object.entries(v).map(([k,x])=>[k,template(x,env)]));if(typeof v==='string'){const exact=/^\$\{(\w+)\}$/.exec(v);if(exact)return env[exact[1]]??'';return v.replace(/\$\{(\w+)\}/g,(_,k)=>String(env[k]??''));}return v;}
@@ -33,7 +33,7 @@ function mapped(answer:any,title:any,q:Prepared,ai:boolean,usage?:any,diagnose?:
  if(answer===null||answer===''||(Array.isArray(answer)&&!answer.length)){diagnose?.({stage:'answer',status:'no_answer',message:'上游已响应，本题没有答案'});return null;}
  if(answer===undefined){diagnose?.({stage:'mapping',status:'failed',code:'response_mapping',message:'响应中缺少配置的答案字段，请检查答案路径'});return null;}
  diagnose?.({stage:'mapping',status:'passed',message:'答案字段已提取'});
- const valid=canonicalAnswer(answer,q);if(!valid){diagnose?.({stage:'answer',status:'failed',code:'answer_mismatch',message:'上游有返回，但答案无法匹配当前题型或选项'});return null;}
+ const valid=canonicalAnswer(answer,q);if(!valid){diagnose?.({stage:'answer',status:'failed',code:'answer_mismatch',message:'上游有返回，但答案无法匹配当前题型或选项',details:{answerType:Array.isArray(answer)?'array':typeof answer,answer,questionType:q.type,choices:q.choices}});return null;}
  if(title&&compact(String(title))!==q.normalTitle&&!fuzzySafe(q,prepare({...q,title:String(title)}))){diagnose?.({stage:'answer',status:'failed',code:'answer_mismatch',message:'返回题干与测试题目不一致，未采用答案'});return null;}
  diagnose?.({stage:'answer',status:'passed',message:'答案结构及题型/选项匹配通过（不代表已核验正确率）'});
  return {answer:valid,question:q.title,ai,usage};
@@ -62,6 +62,6 @@ export async function queryProvider(p:Provider,q:Prepared,timeout:number,transpo
  const thinking=c.enableThinking??(/^agnes-/i.test(String(c.model))?false:undefined);if(format==='chat'&&typeof thinking==='boolean')payload.chat_template_kwargs={enable_thinking:thinking};
  const r=await transport(url,'POST',{'Content-Type':'application/json','Authorization':`Bearer ${c.apiKey}`},payload,timeout);
  const output=extractAiOutput(r,diagnose);if(!output)return null;
- let result:any;try{result=JSON.parse(output.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{diagnose?.({stage:'mapping',status:'failed',code:'response_mapping',message:'模型输出不是有效的答案JSON，请检查模型和提示词兼容性'});return null;}
+ let result:any;try{result=JSON.parse(output.text.trim().replace(/^```(?:json)?\s*/,'').replace(/\s*```$/,''));}catch{diagnose?.({stage:'mapping',status:'failed',code:'response_mapping',message:'模型输出不是有效的答案JSON，请检查模型和提示词兼容性',details:{output:output.text}});return null;}
  return mapped(result?.answer,undefined,q,true,output.usage,diagnose);
 }

@@ -16,6 +16,7 @@ data/
     ├── config/
     │   └── config.env       # 应用运行配置与私密数据库凭据
     ├── storage/             # 加密主密钥及持久文件
+    ├── logs/                # 运行日志及轮转历史
     ├── compose.yml          # 容器定义，已有文件不自动替换
     └── .env                 # 仅保存镜像、网络、宿主机端口等 Compose 参数
 ```
@@ -101,6 +102,45 @@ docker compose -f compose.yml up -d --wait
 ```
 
 应用启动先加载并校验配置，再按版本执行 Prisma 迁移，成功后才监听端口。初始化过程不创建外部数据库或数据库账号。
+
+## 运行日志
+
+`./logs` 绑定到容器 `/app/logs`，由 init 准备 UID/GID 1000 可写的目录。应用启动、控制台警告和错误同时写入宿主机 `logs/app.log`；容器标准输出仍可通过 Docker 或 Python 运维的 `logs` 命令查看。文件使用 JSON 行格式，包含 UTC 时间、级别及消息。日志每 10 MiB 轮转，保留三份历史文件，不要求额外配置。
+
+```sh
+tail -f /data/ocs-answer-hub/logs/app.log
+```
+
+业务数据库仍位于独立 PostgreSQL。部署目录只管理配置、应用密钥及运行日志，不会把 PostgreSQL 数据文件搬进应用日志目录。
+
+### 已有部署增加日志挂载
+
+部署工具完整保留已有 `compose.yml`，升级时需手工合并模板新增的挂载。先备份 Compose 文件，在 `init.volumes` 加入：
+
+```yaml
+- ./logs:/app/logs
+```
+
+在 `app.volumes` 加入：
+
+```yaml
+- type: bind
+  source: ./logs
+  target: /app/logs
+  bind:
+    create_host_path: false
+```
+
+使用已发布的新镜像后执行：
+
+```sh
+cd /data/ocs-answer-hub
+docker compose -f compose.yml run --rm --no-deps init
+docker compose -f compose.yml run --rm --no-deps app check
+docker compose -f compose.yml up -d --force-recreate --wait
+```
+
+init 创建或准备日志目录，保留已有文件。仅重启容器不会增加挂载。运行日志默认不会由开发清理脚本删除；需要归档时由部署者自行保管历史文件。
 
 ## 配置修改与升级
 

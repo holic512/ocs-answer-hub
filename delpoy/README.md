@@ -49,6 +49,8 @@ python3 delpoy/deploy.py check --dir /data/ocs-answer-hub
 
 安装或更新支持 `--no-pull`，用于已通过 `docker load` 导入镜像的离线环境。`--port 0` 可让 Docker 自动分配宿主机端口，通过 `status` 查看。
 
+运行日志在 `logs/app.log`，与控制台同步输出，10 MiB 自动轮转并保留三份历史文件；重启、重建和更新后保留。已有部署需先参照 `deploy/OPERATIONS.md` 为 `init` 和 `app` 补充日志挂载，脚本不会覆盖原 Compose。
+
 应用配置在 `config/config.env`；镜像、网络、端口参数在部署目录 `.env`。首次安装会创建 Compose 参数文件；后续安装或更新仅在成功后同步 Compose 参数，不读取或打印数据库密码。更新失败不自动回滚数据库，请查看日志处理迁移或连接错误。
 
 已有 Shell 部署目录也可以直接通过本脚本管理。私有镜像需先执行 `docker login ghcr.io`；Docker 权限不足时，请使用有 Docker 权限的账号或自行通过 sudo 执行。

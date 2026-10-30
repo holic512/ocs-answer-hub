@@ -8,3 +8,14 @@ test('numeric variants and images are separate identities',()=>{const a=prepare(
 test('scientific notation, parentheses, unit and Unicode distinctions stay separate',()=>{for(const [a,b] of [['(1+2)*3','1+2*3'],['2¹','21'],['3米','3厘米'],['a < b','a > b'],['a<b && c>d','a d']])assert.notEqual(prepare({title:a,type:'completion'}).key,prepare({title:b,type:'completion'}).key);});
 test('answers that contain hash punctuation and bare C option are preserved',()=>{const q=prepare({title:'编程语言',type:'single',options:'A. C#\nB. Java'});assert.equal(canonicalAnswer('C#',q),'C#');const c=prepare({title:'选字母',type:'single',options:['A theory','B theory','C theory']});assert.deepEqual(c.choices,['A theory','B theory','C theory']);});
 test('judgement normalisation and invalid option safety',()=>{assert.equal(canonicalAnswer('true',prepare({title:'题',type:'judgement'})),'正确');assert.equal(canonicalAnswer('Z',prepare({title:'题',type:'single',options:'A. 是\nB. 否'})),null);});
+test('labelled choice answers require the label and text to match the same option',()=>{
+ const q=prepare({title:'1+2等于几？',type:'single',options:'A. 2\nB. 3\nC. 4'});
+ for(const answer of ['B. 3','B、3','B: 3','B) 3','Ｂ．３','b）3','答案：B. 3'])assert.equal(canonicalAnswer(answer,q),'3',answer);
+ for(const answer of ['B. 4','A. 3','Z. 3','B. 3，因为1+2=3','B.','B. 3#C. 4'])assert.equal(canonicalAnswer(answer,q),null,answer);
+ const multiple=prepare({...q,type:'multiple'});
+ assert.equal(canonicalAnswer('A. 2#B. 3',multiple),'2#3');
+ assert.equal(canonicalAnswer(['A. 2','B. 3'],multiple),'2#3');
+ assert.equal(canonicalAnswer('A. 3#B. 2',multiple),null);
+ const language=prepare({title:'语言',type:'single',options:'A. C#\nB. Java'});
+ assert.equal(canonicalAnswer('A. C#',language),'C#');
+});

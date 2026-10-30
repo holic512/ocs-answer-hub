@@ -78,6 +78,24 @@ try{
  steps.push('新数据库不生成管理员或明文密码文件，通过网页初始化接口创建管理员后关闭初始化入口');
 
  assert.equal(inspect().Mounts.find(m=>m.Destination==='/app/config').RW,false);
+ assert.equal(inspect().Mounts.find(m=>m.Destination==='/app/logs').RW,true);
+ const logMarker='deployment-log-persistence-fixture';
+ helper("require('fs').appendFileSync('/fixture/logs/app.log',JSON.stringify({message:'deployment-log-persistence-fixture'})+'\\n')");
+ const persistedLog=()=>helper("console.log(require('fs').readFileSync('/fixture/logs/app.log','utf8'))");
+ assert(persistedLog().includes('知序已启动'));
+ const probeLog=compose(['exec','-T','app','node','--input-type=module','-e',`
+ const headers={origin:'https://first.example.com','Content-Type':'application/json'};
+ const login=await fetch('http://127.0.0.1:18771/api/login',{method:'POST',headers,body:JSON.stringify({username:'deployment-admin',password:'setup-fixture-password'})});
+ const session=await login.json();
+ const tested=await fetch('http://127.0.0.1:18771/api/admin/providers/test',{method:'POST',headers:{...headers,cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf},body:JSON.stringify({provider:{name:'deployment-diagnostics-fixture',kind:'http',config:{url:'http://local-upstream:8080/query',answerPath:'answer'}},question:{title:'1+2',type:'single',options:['2','3']}})});
+ console.log(JSON.stringify(await tested.json()));`]);
+ const tested=JSON.parse(probeLog);assert.equal(tested.failureCode,'answer_mismatch');assert(tested.requestId);
+ const records=persistedLog().split('\n').filter(Boolean).map(line=>JSON.parse(line));
+ assert(records.some(row=>row.event==='provider-test'&&row.requestId===tested.requestId));
+ assert(records.some(row=>row.event==='http.request.completed'&&row.requestId===tested.requestId));
+ assert(persistedLog().includes('deployment-diagnostics-fixture'));
+ assert(!persistedLog().includes('setup-fixture-password'));assert(!persistedLog().includes('isolated-deployment-fixture'));
+ steps.push('真实来源测试的诊断和 HTTP 完成日志按 requestId 关联并写入宿主机文件，登录及数据库密码未记录');
  assert.equal(inspect().Config.Env.some(v=>v.startsWith('DB_PASSWORD=')),false);
  assert.equal(probeOrigin('https://first.example.com'),401);
  compose(['exec','-T','app','node','-e',"require('fs').writeFileSync('/app/storage/persistence-fixture','preserved')"]);
@@ -93,6 +111,7 @@ try{
  const oldId=appId();
  compose(['up','-d','--force-recreate','--wait','--wait-timeout','120','--pull','never','app']);await healthy();
  assert.notEqual(appId(),oldId);assert.equal(hash('config/config.env'),customized);assert.equal(hash('storage/master.key'),key);
+ assert(persistedLog().includes(logMarker));
  steps.push('重新创建容器后配置与加密主密钥保留');
 
  const oldImage=inspect().Image;
@@ -101,6 +120,8 @@ try{
  operations(['update','--no-pull','--image',upgrade]);await healthy();
  assert((await fs.readFile(path.join(directory,'.env'),'utf8')).includes('APP_IMAGE='+upgrade));
  assert.notEqual(inspect().Image,oldImage);assert.equal(hash('config/config.env'),customized);assert.equal(hash('storage/master.key'),key);
+ assert(persistedLog().includes(logMarker));
+ steps.push('启动日志持久化到宿主机 logs/app.log，重启、重建和镜像升级后原日志保留');
  assert.equal(helper("console.log(require('fs').readFileSync('/fixture/storage/persistence-fixture','utf8'))"),'preserved');
  assert.equal(docker(['exec',postgres,'psql','-U','postgres','-d','answer_hub','-tAc',"SELECT value->>'deployment_fixture' FROM settings WHERE id=1"]),'preserved');
  assert.equal(probeOrigin('https://second.example.com'),401);
@@ -122,6 +143,6 @@ try{
  if(postgresCreated)try{docker(['rm','-f',postgres]);}catch{}
  if(networkCreated)try{docker(['network','rm',network]);}catch{}
  if(upgradeCreated)try{docker(['image','rm',upgrade]);}catch{}
- try{helper("const fs=require('fs');for(const name of ['config','storage','preplaced'])fs.rmSync('/fixture/'+name,{recursive:true,force:true});");}catch{}
+ try{helper("const fs=require('fs');for(const name of ['config','storage','logs','preplaced'])fs.rmSync('/fixture/'+name,{recursive:true,force:true});");}catch{}
  await fs.rm(directory,{recursive:true,force:true});
 }

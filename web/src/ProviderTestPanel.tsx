@@ -16,6 +16,7 @@ export default function ProviderTestPanel({provider,sourceId,run,api}:Props){
   <Button type="button" className="primary full" disabled={pending||!title.trim()} onClick={execute}>{pending?'正在测试该来源…':'开始测试'}</Button>
   {pending&&<div className="test-wait" role="status"><div className="spinner"/>正在检查连接、响应解析与答案匹配…</div>}
   {result&&<section className="test-report" aria-label="题库源测试结果"><div className="test-report-heading"><div><Badge className={`${result.status==='passed'?'green':result.status==='no_answer'?'amber':'gray'}`}>{result.status==='passed'?'链路通过':result.status==='no_answer'?'接口已响应，本题未命中':'测试未通过'}</Badge><p>{result.reachable?'已收到上游响应':'未完成上游响应'} · {result.durationMs} ms{result.httpStatus?` · HTTP ${result.httpStatus}`:''}</p></div><Badge tone="gray">不入库</Badge></div>
+  {result.requestId&&<p className="muted">请求编号：<code className="break-all">{result.requestId}</code></p>}
   {result.warnings?.map((w:string,i:number)=><p className="test-warning" key={i}>{w}</p>)}
   {result.answer&&<div className="answer-box"><small>本次测试答案 · 未核验正确率</small><h3>{result.answer}</h3></div>}
   <ol className="test-chain">{result.steps?.map((step:any,i:number)=><li key={i}><span className={`test-step-symbol ${step.status}`}>{step.status==='passed'?'✓':step.status==='no_answer'?'—':'!'}</span><div><strong>{stages[step.stage]??step.stage}</strong><p>{step.message}</p></div>{step.durationMs!==undefined&&<small>{step.durationMs} ms</small>}</li>)}</ol></section>}

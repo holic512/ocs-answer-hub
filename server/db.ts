@@ -3,12 +3,13 @@
  * @project ocs-answer-hub
  * @module 数据库
  * @description 共用 PostgreSQL 连接池与 Prisma ORM，启动前执行版本迁移。
- * @logic 识别并校验旧版基线，执行待应用迁移，保留 PostgreSQL 专用查询能力。
+ * @logic 识别旧版基线并执行待应用迁移，记录迁移阶段和错误位置，保留专用查询能力。
  * @dependencies pg, @prisma/client, @prisma/adapter-pg, prisma
  * @index_tags database, orm, migration
  * @author holic512
  */
 import pg from 'pg';
+import {logEvent,logError} from './logging.js';
 import {PrismaClient} from '@prisma/client';
 import {PrismaPg} from '@prisma/adapter-pg';
 import {execFile} from 'node:child_process';
@@ -29,6 +30,7 @@ export async function migrate(pool:pg.Pool){
  try{
   await connection.query('SELECT pg_advisory_lock(764002)');
   const state=(await connection.query("SELECT to_regclass('public._prisma_migrations') AS prisma, to_regclass('public.schema_migrations') AS legacy")).rows[0];
+  logEvent('database.schema.detected',{prisma:Boolean(state.prisma),legacy:Boolean(state.legacy)});
   if(!state.prisma&&state.legacy){
    const legacy=await connection.query("SELECT version FROM schema_migrations WHERE version='001-initial'");
    if(!legacy.rowCount)throw new Error('无法识别旧数据库版本，请先核对结构并手动建立迁移基线');
@@ -40,9 +42,12 @@ export async function migrate(pool:pg.Pool){
    await runPrisma(pool,['migrate','resolve','--applied',baseline]);
   }
   await runPrisma(pool,['migrate','deploy']);
+  const applied=await connection.query('SELECT migration_name,finished_at FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY finished_at DESC LIMIT 5');
+  logEvent('database.migrations.applied',{recent:applied.rows.map(row=>({name:row.migration_name,finishedAt:row.finished_at?.toISOString()}))});
  }finally{await connection.query('SELECT pg_advisory_unlock(764002)');connection.release();}
 }
 async function runPrisma(pool:pg.Pool,args:string[]){
- try{const result=await execute(process.execPath,[cli,...args],{cwd:root,env:{...process.env,PRISMA_DATABASE_URL:pool.options.connectionString},maxBuffer:1024*1024});return result.stdout;}
- catch(error:any){throw new Error(`数据库版本迁移失败（${args.slice(0,2).join(' ')}），请参照 docs/DATABASE_AND_VERSIONING.md 检查迁移状态；未启动服务。`,{cause:error});}
+ const started=Date.now();const command=args.slice(0,2).join(' ');logEvent('database.command.started',{command});
+ try{const result=await execute(process.execPath,[cli,...args],{cwd:root,env:{...process.env,PRISMA_DATABASE_URL:pool.options.connectionString},maxBuffer:1024*1024});logEvent('database.command.completed',{command,durationMs:Date.now()-started});return result.stdout;}
+ catch(error:any){logEvent('database.command.failed',{command,durationMs:Date.now()-started,error:logError(error)},'error');throw new Error(`数据库版本迁移失败（${args.slice(0,2).join(' ')}），请参照 docs/DATABASE_AND_VERSIONING.md 检查迁移状态；未启动服务。`,{cause:error});}
 }

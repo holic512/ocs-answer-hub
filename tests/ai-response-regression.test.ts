@@ -30,3 +30,12 @@ test('chat content and validated answers continue to pass',async()=>{
  const r=await probeProvider(provider,q,async()=>({choices:[{finish_reason:'stop',message:{role:'assistant',content:'{"answer":"B"}'}}]}));
  assert.equal(r.status,'passed');assert.equal(r.answer,'3');
 });
+test('CPA labelled answer passes both chat and Responses extraction and option matching',async()=>{
+ for(const response of [
+  {choices:[{finish_reason:'stop',message:{content:'{"answer":"B. 3"}'}}]},
+  {object:'response',status:'completed',output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'{"answer":"B. 3"}'}]}]}
+ ]){
+  const result=await probeProvider({...provider,name:'cpa'},q,async()=>response);
+  assert.equal(result.status,'passed');assert.equal(result.answer,'3');assert.equal(result.failureCode,undefined);
+ }
+});

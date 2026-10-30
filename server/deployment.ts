@@ -2,9 +2,9 @@
  * @file deployment.ts
  * @project ocs-answer-hub
  * @module 容器入口
- * @description 首次配置初始化、启动前校验与健康检查。
- * @logic 默认模板与配置目录分离，只创建缺失配置；应用以非 root 身份读取配置。
- * @dependencies node:fs, node:path, config
+ * @description 首次配置和日志目录初始化、启动前校验与健康检查。
+ * @logic 模板与配置分离，只创建缺失配置；准备可写状态和日志目录，启动时记录文件日志。
+ * @dependencies node:fs, node:path, config, logging
  * @index_tags docker, config, deployment
  * @author holic512
  */
@@ -12,15 +12,19 @@ import {constants} from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {loadRuntimeConfig} from './config.js';
+import {installFileLogging} from './logging.js';
 
 try{
  const action=process.argv[2]??'start';
+ if(action==='start')installFileLogging();
  if(action==='init')await initialize();
  else if(action==='check'){
   const config=loadRuntimeConfig();
   await fs.mkdir(config.stateDir,{recursive:true,mode:0o700});
   await fs.access(config.stateDir,constants.W_OK);
-  console.log('运行配置校验通过，状态目录可写；未连接数据库，未输出配置内容');
+  await fs.mkdir(path.resolve('logs'),{recursive:true,mode:0o700});
+  await fs.access(path.resolve('logs'),constants.W_OK);
+  console.log('运行配置校验通过，状态和日志目录可写；未连接数据库，未输出配置内容');
  }else if(action==='health'){
   const config=loadRuntimeConfig();
   const host=config.host==='0.0.0.0'?'127.0.0.1':config.host==='::'?'[::1]':config.host;
@@ -37,7 +41,7 @@ try{
 async function initialize(){
  const file=process.env.CONFIG_FILE??'/app/config/config.env';
  const storage=process.env.STATE_DIR??'/app/storage';
- for(const directory of [path.dirname(file),storage]){
+ for(const directory of [path.dirname(file),storage,path.resolve('logs')]){
   await fs.mkdir(directory,{recursive:true,mode:0o700});
   if(process.getuid?.()===0)await fs.chown(directory,1000,1000);
  }

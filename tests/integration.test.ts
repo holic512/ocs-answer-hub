@@ -3,6 +3,8 @@ import os from 'node:os';import path from 'node:path';import {createTestDatabase
 test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart',{timeout:120000},async(t)=>{
  const database=await createTestDatabase();const url=database.url;
  const pool=createPool(url);t.after(async()=>{await pool.end();await database.close();});
+ const logs:Array<{event:string;data:any}>=[];
+ for(const method of ['info','warn','error'] as const)t.mock.method(console,method,(event:unknown,data:unknown)=>{if(typeof event==='string'&&typeof data==='string'){try{logs.push({event:event.slice(1,-1),data:JSON.parse(data)});}catch{}}});
  const state=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-integration-'));t.after(()=>fs.rm(state,{recursive:true,force:true}));
  // This isolated database was created exclusively for automated acceptance.
  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
@@ -50,5 +52,38 @@ test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart
  });
  await t.test('quota, revoked token, local provider configuration and persistence',async()=>{const limited=(await req('POST','/api/admin/tokens',{name:'limited',daily_limit:1,rpm:1})).json();const invoke=()=>app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${limited.token}`},payload:q});assert.equal((await invoke()).statusCode,200);assert.equal((await invoke()).statusCode,429);await req('POST',`/api/admin/tokens/${limited.id}/revoke`,{});assert.equal((await invoke()).statusCode,401);const r=await req('POST','/api/admin/providers',{name:'local',kind:'http',config:{url:'http://127.0.0.1',answerPath:'answer'}});assert.equal(r.statusCode,201);
  const key=built.key;await app.close();built=await buildApp({databaseUrl:url,pool,origin,stateDir:state,transport,test:true});app=built.app;await app.ready();assert.equal(built.key,key);assert.equal((await built.engine.local(prepare(q))).answer,'3');assert.equal((await pool.query('SELECT count(*) FROM administrators')).rows[0].count,'1');assert.equal((await req('GET','/api/setup',undefined,false)).json().required,false);assert.equal((await pool.query('SELECT username FROM administrators WHERE id=1')).rows[0].username,'owner-test');await assert.rejects(fs.access(state+'/bootstrap-admin.json'));});
+ await t.test('request traces link concurrent queries, administrative changes and rejected input without credentials',async()=>{
+  const responses=await Promise.all(['日志并发一','日志并发二'].map(title=>req('POST','/api/admin/query',{...q,title})));
+  for(const [index,response] of responses.entries()){
+   assert.equal(response.statusCode,200,response.body);
+   const requestId=response.headers['x-request-id'];assert.match(String(requestId),/^[a-f0-9-]{36}$/);
+   const trace=logs.filter(row=>row.data.requestId===requestId);
+   const started=trace.find(row=>row.event==='query.started')!;assert(started);assert.equal(started.data.question.title,index===0?'日志并发一':'日志并发二');
+   const finished=trace.find(row=>row.event==='query.completed')!;assert.equal(finished.data.queryId,started.data.queryId);assert.equal(finished.data.status,'hit');
+   assert(trace.some(row=>row.event==='question.stored'&&row.data.queryId===started.data.queryId&&row.data.questionId===finished.data.questionId));
+   assert(trace.some(row=>row.event==='provider.started'));assert(trace.some(row=>row.event==='http.request.completed'&&row.data.statusCode===200));
+  }
+  assert.notEqual(responses[0].headers['x-request-id'],responses[1].headers['x-request-id']);
+  const joined=logs.find(row=>row.event==='query.joined');assert(joined);assert(logs.some(row=>row.event==='query.started'&&row.data.queryId===joined.data.queryId));
+  const invalid=await req('POST','/api/admin/questions',{title:'invalid-fixture'});assert.equal(invalid.statusCode,400);
+  assert.equal(invalid.json().requestId,invalid.headers['x-request-id']);assert(logs.some(row=>row.event==='http.request.failed'&&row.data.requestId===invalid.json().requestId));
+  assert(logs.some(row=>row.event==='admin.action'&&row.data.route==='/api/admin/providers'&&row.data.result?.id===providerIds[0]));
+  assert(logs.some(row=>row.event==='auth.setup.completed'));assert(logs.some(row=>row.event==='auth.login.completed'));
+  const serialized=JSON.stringify(logs);for(const secret of ['setup827','study827','secret-test-key',token,csrf,session.split('=')[1]])assert(!serialized.includes(secret),secret);
+ });
+ await t.test('unexpected server failures log SQL error location and request ID without raw SQL or secrets',async(subtest)=>{
+  const original=pool.query.bind(pool);
+  const query=subtest.mock.method(pool,'query',((...args:any[])=>{
+   if(typeof args[0]==='string'&&args[0].includes('count(*)::int requests'))throw Object.assign(new Error('unsafe SQL password must not be logged'),{code:'XX000',detail:'raw SQL fixture must not be logged'});
+   return (original as any)(...args);
+  }) as any);
+  try{
+   const response=await req('GET','/api/admin/stats');assert.equal(response.statusCode,500);
+   assert.equal(response.json().requestId,response.headers['x-request-id']);
+   const failed=logs.find(row=>row.event==='http.request.failed'&&row.data.requestId===response.json().requestId)!;
+   assert(failed);assert.equal(failed.data.error.code,'XX000');assert(failed.data.error.frames.length>0);
+   assert(!JSON.stringify(logs).includes('unsafe SQL password'));assert(!JSON.stringify(logs).includes('raw SQL fixture'));
+  }finally{query.mock.restore();}
+ });
  await app.close();
 });

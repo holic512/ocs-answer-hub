@@ -28,6 +28,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./storage:/app/storage
+      - ./logs:/app/logs
 
   app:
     <<: *runtime
@@ -42,6 +43,11 @@ services:
         source: ./config
         target: /app/config
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./logs
+        target: /app/logs
         bind:
           create_host_path: false
       - type: bind

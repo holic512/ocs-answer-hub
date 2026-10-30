@@ -29,8 +29,8 @@ COPY deploy/compose.yaml ./defaults/compose.yml
 COPY deploy/deploy.sh ./defaults/deploy.sh
 COPY delpoy/deploy.py ./defaults/deploy.py
 RUN node node_modules/@prisma/engines/scripts/postinstall.js \
-    && mkdir -p /app/config /app/storage \
-    && chown node:node /app/config /app/storage
+    && mkdir -p /app/config /app/storage /app/logs \
+    && chown node:node /app/config /app/storage /app/logs
 USER node
 EXPOSE 18771
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD ["node","dist/server/deployment.js","health"]
