@@ -5,7 +5,6 @@ import ipaddr from 'ipaddr.js';
 import {Agent,request} from 'undici';
 const scrypt=promisify(crypto.scrypt);
 export const randomToken=(bytes=32)=>crypto.randomBytes(bytes).toString('base64url');
-export function generateAdminPassword(){const alphabet='abcdefghjkmnpqrstuvwxyz23456789';let password='';do{password=Array.from({length:8},()=>alphabet[crypto.randomInt(alphabet.length)]).join('');}while(!/[a-z]/.test(password)||!/[0-9]/.test(password));return password;}
 export const digest=(text:string)=>crypto.createHash('sha256').update(text).digest('hex');
 export async function hashPassword(password:string){const salt=randomToken(16);const hash=await scrypt(password,salt,64) as Buffer;return `${salt}:${hash.toString('hex')}`;}
 export async function verifyPassword(password:string,stored:string){try{const [salt,h]=stored.split(':');const actual=await scrypt(password,salt,64) as Buffer;const expected=Buffer.from(h,'hex');return expected.length===actual.length&&crypto.timingSafeEqual(expected,actual);}catch{return false;}}

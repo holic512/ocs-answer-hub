@@ -64,6 +64,13 @@ try{
  const installedConfig=hash('config/config.env');
  operations(['install','--no-pull']);assert.equal(hash('config/config.env'),installedConfig);
  operations(['check']);operations(['status']);operations(['logs','--tail','5']);
+ const setupStatus=()=>JSON.parse(compose(['exec','-T','app','node','-e',"fetch('http://127.0.0.1:18771/api/setup').then(r=>r.text()).then(console.log)"]));
+ assert.equal(setupStatus().required,true);
+ assert.equal(helper("console.log(require('fs').existsSync('/fixture/storage/bootstrap-admin.json'))"),'false');
+ const initialized=compose(['exec','-T','app','node','-e',"fetch('http://127.0.0.1:18771/api/setup',{method:'POST',headers:{origin:'https://first.example.com','Content-Type':'application/json'},body:JSON.stringify({username:'deployment-admin',password:'setup-fixture-password',confirmPassword:'setup-fixture-password'})}).then(r=>console.log(r.status))"]);
+ assert.equal(initialized,'201');assert.equal(setupStatus().required,false);
+ steps.push('新数据库不生成管理员或明文密码文件，通过网页初始化接口创建管理员后关闭初始化入口');
+
  assert.equal(inspect().Mounts.find(m=>m.Destination==='/app/config').RW,false);
  assert.equal(inspect().Config.Env.some(v=>v.startsWith('DB_PASSWORD=')),false);
  assert.equal(probeOrigin('https://first.example.com'),401);
@@ -99,6 +106,7 @@ try{
  steps.push('无效配置在启动前被拒绝，错误输出不包含配置密码');
  operations(['stop']);const stoppedId=compose(['ps','--all','-q','app']);assert.equal(JSON.parse(docker(['inspect',stoppedId]))[0].State.Running,false);
  operations(['start']);await healthy();assert.equal(hash('storage/master.key'),key);
+ assert.equal(setupStatus().required,false);assert.equal(docker(['exec',postgres,'psql','-U','postgres','-d','answer_hub','-tAc','SELECT username FROM administrators WHERE id=1']),'deployment-admin');
  steps.push('Python 运维 install/start/restart/update/stop/status/logs/check 均通过；安装更新使用已有本地镜像，未测试远程拉取');
  console.log(JSON.stringify({passed:true,scope:'本地真实 Docker Compose、独立 PostgreSQL、宿主机目录绑定；升级使用本地模拟新版镜像，未发布 GHCR',steps},null,2));
 }finally{

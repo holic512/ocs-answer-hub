@@ -45,6 +45,8 @@ def main():
         start(directory, settings)
         save_settings(directory / ".env", settings)
         print("{}完成：{}".format("安装" if args.command == "install" else "更新", settings["APP_IMAGE"]))
+        if args.command == "install":
+            print("请在浏览器打开应用；数据库没有管理员时会优先显示初始化页面，由你设置账号和密码。")
     elif args.command == "start":
         start(directory, settings)
         print("应用已启动，配置与数据目录：{}".format(directory))

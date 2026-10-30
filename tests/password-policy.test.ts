@@ -1,3 +1,8 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {generateAdminPassword} from '../server/security.js';
-test('initial password is eight easy-to-type lowercase letters and digits',()=>{const values=new Set<string>();for(let i=0;i<100;i++){const password=generateAdminPassword();assert.match(password,/^[a-z0-9]{8}$/);assert.match(password,/[a-z]/);assert.match(password,/[0-9]/);assert(!/[01ilo]/.test(password));values.add(password);}assert.equal(values.size,100);});
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';
 test('both password inputs allow eight characters and do not require special symbols',async()=>{const ui=await fs.readFile(new URL('../web/src/main.tsx',import.meta.url),'utf8');assert(!ui.includes('minLength={12}'));assert.equal((ui.match(/minLength=\{8\}/g)??[]).length,2);assert(ui.includes('至少 8 位'));});
+
+test('setup form allows eight character passwords and uses password confirmation',async()=>{
+ const ui=await fs.readFile(new URL('../web/src/InitialSetup.tsx',import.meta.url),'utf8');
+ assert.equal((ui.match(/minLength=\{8\}/g)??[]).length,2);
+ assert(ui.includes('name="confirmPassword"'));assert(ui.includes('autoComplete="new-password"'));
+});

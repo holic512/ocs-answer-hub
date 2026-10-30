@@ -3,7 +3,7 @@
  * @project ocs-answer-hub
  * @module HTTP 应用
  * @description 管理后台与 OCS 接口，启动迁移后提供服务及版本健康状态。
- * @logic 数据库迁移、会话鉴权、来源管理、查题与调用凭证配额。
+ * @logic 数据库迁移、首次管理员初始化、会话鉴权、来源管理及查题配额。
  * @dependencies Fastify, Prisma, pg, Engine, security
  * @index_tags api, admin, ocs, version
  * @author holic512
@@ -12,7 +12,7 @@ import {readFileSync} from 'node:fs';
 const systemVersion: string=JSON.parse(readFileSync(new URL(import.meta.url.includes('/dist/server/')?'../../package.json':'../package.json',import.meta.url),'utf8')).version;
 import Fastify from 'fastify';import cookie from '@fastify/cookie';import helmet from '@fastify/helmet';import rateLimit from '@fastify/rate-limit';import serveStatic from '@fastify/static';
 import {z} from 'zod';import type pg from 'pg';import fs from 'node:fs/promises';import path from 'node:path';
-import {randomToken,generateAdminPassword,digest,hashPassword,verifyPassword,encrypt,decrypt,redact,restoreSecrets} from './security.js';
+import {randomToken,digest,hashPassword,verifyPassword,encrypt,decrypt,redact,restoreSecrets} from './security.js';
 import {createPool,createOrm,migrate} from './db.js';import {probeProvider} from './provider-test.js';import {Engine} from './engine.js';import {canonicalAnswer,prepare} from './search.js';import {validateProvider,type Transport} from './providers.js';
 export type AppConfig={databaseUrl:string;origin:string;stateDir:string;key?:string;pool?:pg.Pool;transport?:Transport;allowHosts?:string[];staticDir?:string;test?:boolean};
 const questionSchema=z.object({title:z.string().min(1).max(8000),options:z.union([z.string().max(20000),z.array(z.string().max(2000)).max(50)]).optional(),type:z.enum(['single','multiple','judgement','completion','unknown']).default('unknown'),images:z.array(z.union([z.string().max(20000),z.object({url:z.string().max(20000)}).passthrough()])).max(10).optional(),suggestion_title:z.string().max(8000).optional(),suggestion_options:z.string().max(20000).optional(),course:z.string().max(200).optional()});
@@ -25,8 +25,6 @@ export async function buildApp(config:AppConfig){
  const pool=config.pool??createPool(config.databaseUrl);try{await migrate(pool);}catch(error){if(!config.pool)await pool.end();throw error;}const orm=createOrm(pool);await fs.mkdir(config.stateDir,{recursive:true,mode:0o700});
  let key=config.key;const keyPath=path.join(config.stateDir,'master.key');if(!key){try{key=(await fs.readFile(keyPath,'utf8')).trim();}catch(e:any){if(e.code!=='ENOENT')throw e;key=randomToken(32);key=Buffer.from(key,'base64url').toString('hex');try{await fs.writeFile(keyPath,key,{mode:0o600,flag:'wx'});}catch(e:any){if(e.code!=='EEXIST')throw e;key=(await fs.readFile(keyPath,'utf8')).trim();}}}
  if(!/^[0-9a-f]{64}$/i.test(key!))throw new Error('MASTER_KEY 必须为64位十六进制');
- const init=await pool.connect();try{await init.query('BEGIN');await init.query('SELECT pg_advisory_xact_lock(764001)');const count=(await init.query('SELECT id FROM administrators WHERE id=1')).rowCount;
- if(!count){const password=generateAdminPassword();await init.query('INSERT INTO administrators(id,username,password_hash) VALUES(1,$1,$2)',['admin',await hashPassword(password)]);await fs.writeFile(path.join(config.stateDir,'bootstrap-admin.json'),JSON.stringify({username:'admin',password,url:config.origin},null,2),{mode:0o600});}await init.query('COMMIT');}catch(e){await init.query('ROLLBACK');throw e;}finally{init.release();}
  const app=Fastify({logger:false,bodyLimit:256*1024,trustProxy:['127.0.0.1','::1'],requestTimeout:65000});const engine=new Engine(pool,key!,config.transport,config.allowHosts??[]);
  await app.register(cookie);await app.register(helmet,{contentSecurityPolicy:{directives:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'data:'],connectSrc:["'self'"],frameAncestors:["'none'"],objectSrc:["'none'"]}},hsts:{maxAge:31536000}});await app.register(rateLimit,{global:true,max:300,timeWindow:'1 minute',allowList:config.test?['127.0.0.1']:[]});
  const secure=new URL(config.origin).protocol==='https:';const cookieOptions={path:'/',httpOnly:true,secure,sameSite:'strict' as const};
@@ -38,7 +36,21 @@ export async function buildApp(config:AppConfig){
   if(row.must_change&&!['/api/admin/me','/api/admin/password','/api/admin/logout'].includes(req.routeOptions.url??''))return reply.code(403).send({error:'首次登录请先修改密码',mustChange:true});
  });
  app.get('/api/health',async()=>{await pool.query('SELECT 1');return {ok:true,service:'ocs-answer-hub',version:systemVersion};});
- app.post('/api/login',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{if(req.headers.origin!==config.origin)throw fail('请求来源不被允许',403);const data=z.object({username:z.string().max(100),password:z.string().max(200)}).parse(req.body);const row=(await pool.query('SELECT * FROM administrators WHERE id=1')).rows[0];if(!row||data.username!==row.username||!await verifyPassword(data.password,row.password_hash))throw fail('账号或密码不正确',401);
+ app.get('/api/setup',async(_req,reply)=>{
+  reply.header('Cache-Control','no-store');
+  return {required:!(await pool.query('SELECT id FROM administrators WHERE id=1')).rowCount};
+ });
+ app.post('/api/setup',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+  reply.header('Cache-Control','no-store');
+  if(req.headers.origin!==config.origin)throw fail('请求来源不被允许',403);
+  const parsed=z.object({username:z.string().trim().min(1,'请填写管理员账号').max(100,'账号最多100个字符'),password:z.string().min(8,'密码至少需要8个字符').max(128,'密码最多128个字符'),confirmPassword:z.string().max(128)}).refine(data=>data.password===data.confirmPassword,{message:'两次密码不一致',path:['confirmPassword']}).safeParse(req.body);
+  if(!parsed.success)throw fail(parsed.error.issues[0].message);
+  const data=parsed.data;
+  const created=await pool.query('INSERT INTO administrators(id,username,password_hash,must_change) VALUES(1,$1,$2,false) ON CONFLICT(id) DO NOTHING RETURNING username',[data.username,await hashPassword(data.password)]);
+  if(!created.rowCount)throw fail('系统已完成初始化，请使用已有管理员账号登录',409);
+  reply.code(201);return {ok:true,username:created.rows[0].username};
+ });
+ app.post('/api/login',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{if(req.headers.origin!==config.origin)throw fail('请求来源不被允许',403);const data=z.object({username:z.string().max(100),password:z.string().max(200)}).parse(req.body);const row=(await pool.query('SELECT * FROM administrators WHERE id=1')).rows[0];if(!row)throw fail('请先完成管理员初始化',409);if(data.username!==row.username||!await verifyPassword(data.password,row.password_hash))throw fail('账号或密码不正确',401);
  await pool.query('DELETE FROM sessions WHERE expires_at<now()');const token=randomToken(),csrf=randomToken();await pool.query('INSERT INTO sessions(hash,csrf,expires_at) VALUES($1,$2,now()+interval \'12 hours\')',[digest(token),csrf]);reply.setCookie('session',token,{...cookieOptions,maxAge:43200});return {username:row.username,csrf,mustChange:row.must_change};});
  app.get('/api/admin/me',async req=>({username:(req as any).admin.username,csrf:(req as any).admin.csrf,mustChange:(req as any).admin.must_change}));
  app.post('/api/admin/logout',async(req,reply)=>{await pool.query('DELETE FROM sessions WHERE hash=$1',[digest(req.cookies.session??'')]);reply.clearCookie('session',cookieOptions);return {ok:true};});

@@ -48,3 +48,5 @@ awk -v image="$IMAGE" -v network="${DATABASE_NETWORK:-}" '
 mv "$TEMP" "$DEPLOY_DIR/.env"
 trap - EXIT HUP INT TERM
 printf '部署完成：%s\n应用配置修改后：cd "%s" && docker compose -f compose.yml restart app\n' "$IMAGE" "$DEPLOY_DIR"
+
+printf "首次使用请在浏览器打开应用，在初始化页面设置管理员账号和密码；已有账号不会重建。\n"
