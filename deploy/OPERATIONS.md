@@ -154,7 +154,7 @@ sh deploy.sh ghcr.io/holic512/ocs-answer-hub:目标版本 ./data/ocs-answer-hub
 
 ```sh
 docker build -f deploy/Dockerfile -t ocs-deployment-check:base .
-npm run test:deployment
+node scripts/deployment-acceptance.mjs
 ```
 
 该测试创建独立 PostgreSQL、网络和宿主机临时绑定目录，覆盖首次初始化、预置配置、错误配置、只读挂载、修改后重启、容器重建、模拟新版镜像升级及配置/密钥/数据库数据持久化；结束清理本次测试资源。模拟镜像升级用于验证持久化，不代表 GHCR 发布或线上升级已完成。

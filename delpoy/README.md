@@ -67,7 +67,7 @@ python3 deploy.py install --dir /data/ocs-answer-hub --network 已有数据库�
 ```sh
 python3 -B -m unittest discover -s tests -p test_deploy.py
 # 构建验收镜像后执行既有部署生命周期验收，包含 Python 运维命令。
-npm run test:deployment
+node scripts/deployment-acceptance.mjs
 ```
 
 部署验收使用独立临时 PostgreSQL、网络和绑定目录，安装和更新使用本地镜像；结束自动清理本次测试资源，不连接业务数据库。

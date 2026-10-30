@@ -1,31 +1,19 @@
 {
   "name": "ocs-answer-hub",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "description": "知序：兼容 OCS 的单用户本地优先题库服务",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "setup:local": "node scripts/setup-local.mjs",
-    "db:up": "docker compose -f compose.dev.yaml up -d --wait",
-    "db:stop": "docker compose -f compose.dev.yaml stop",
-    "dev": "node --env-file-if-exists=.env --import tsx --watch server/index.ts",
-    "dev:web": "vite --host 127.0.0.1 --port 5173 --strictPort",
-    "build": "npm run db:generate && tsc -p tsconfig.server.json && vite build",
-    "start": "node --env-file-if-exists=.env dist/server/index.js",
+    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+    "build": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate && tsc -p tsconfig.server.json && vite build",
     "test": "node --env-file-if-exists=.env --import tsx --test tests/*.test.ts",
-    "test:browser": "node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "verify": "node --env-file-if-exists=.env scripts/verify.mjs",
-    "db:generate": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate",
-    "db:migrate": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy",
-    "db:status": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status",
-    "db:migration": "node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate dev --create-only --name",
     "prepare": "node scripts/install-hooks.mjs",
-    "postinstall": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate",
-    "test:deployment": "node scripts/deployment-acceptance.mjs"
+    "postinstall": "node --env-file-if-exists=.env node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

@@ -3,7 +3,7 @@ import {mkdirSync,writeFileSync,readdirSync,readFileSync,statSync,existsSync} fr
 import {createHash} from 'node:crypto';
 import path from 'node:path';
 if(!process.env.TEST_DB_NAME||process.env.TEST_DATABASE_RESET!=='1'){
- console.error('完整验证需要专用 TEST_DB_NAME 和 TEST_DATABASE_RESET=1，请先运行 npm run setup:local 和 npm run db:up。');process.exit(1);
+ console.error('完整验证需要专用 TEST_DB_NAME 和 TEST_DATABASE_RESET=1，请先运行 node scripts/setup-local.mjs 和 docker compose -f compose.dev.yaml up -d --wait。');process.exit(1);
 }
 const evidence=path.resolve(process.env.EVIDENCE_DIR??'artifacts/verification');
 mkdirSync(evidence,{recursive:true,mode:0o700});

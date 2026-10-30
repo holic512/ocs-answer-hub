@@ -7,7 +7,7 @@
 - 空库：自动创建初始结构并记录迁移版本。
 - 已迁移的库：只执行 `prisma/migrations` 中尚未应用的迁移，重复启动不会重复执行。
 - 旧系统数据库：识别 `schema_migrations` 中的 `001-initial`，先校验结构，再建立 Prisma 基线；保留账号、题库、来源、凭证和历史数据。未安装扩展时缺失的可选模糊索引不阻止接管。
-- 未知结构或迁移失败：停止启动，不执行重置；查看 `npm run db:status` 并核对迁移记录。
+- 未知结构或迁移失败：停止启动，不执行重置；查看 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 并核对迁移记录。
 
 `prisma/schema.prisma` 是当前模型；`prisma/migrations` 是不可随意修改的版本历史；`prisma/baseline.prisma` 是旧版固定快照，不随业务模型更新。迁移记录保存在 `_prisma_migrations`，原 `schema_migrations` 作为旧系统记录保留。
 
@@ -16,16 +16,16 @@ Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；�
 ## 开发新表结构
 
 1. 在独立开发数据库修改 `prisma/schema.prisma`。
-2. 运行 `npm run db:migration -- add_question_field` 生成待审查迁移；Prisma 开发迁移需要独立影子数据库权限，不在生产上运行。
+2. 运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate dev --create-only --name add_question_field` 生成待审查迁移；Prisma 开发迁移需要独立影子数据库权限，不在生产上运行。
 3. 核对生成的 SQL，特别是字段删除、类型变化和默认值；需要保留的数据应通过显式 SQL 转换。
-4. 运行 `npm run db:migrate` 应用待执行迁移，再运行 `npm run db:generate` 更新客户端。
+4. 运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy` 应用待执行迁移，再运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js generate` 更新客户端。
 5. 一并提交模型和迁移目录。已应用的迁移不再修改，新变更新增迁移。
 
 `pg_trgm` 索引与 CHECK 约束包含手写 SQL，调整相关模型时需同步检查生成迁移。不要使用 `db push` 或 `migrate reset` 更新现有业务数据库。
 
 ## 部署升级
 
-先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、模型与迁移文件；启动会按顺序应用新迁移。也可以在启动前手动运行 `npm run db:migrate`，用 `npm run db:status` 查看状态。迁移账号需要相应的建表、改表权限。
+先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、模型与迁移文件；启动会按顺序应用新迁移。也可以在启动前手动运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy`，用 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 查看状态。迁移账号需要相应的建表、改表权限。
 
 迁移版本与应用版本分别记录：应用版本是 `1.0.0` 等版本号，数据库版本是按时间排序的迁移目录。发布包含哪些迁移由该提交内的迁移目录确定；不提供自动降级或自动删除业务数据。
 
@@ -42,7 +42,7 @@ Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；�
 
 `x` 保持不变；每次提交递增 `z`，超过 20 时 `z` 归零、`y` 加一。
 
-运行 `npm install` / `npm ci` 时，prepare 自动安装仓库内 `.githooks/pre-commit`；当前仓库已启用。已有自定义 hooksPath 时安装脚本停止并提示接入，不覆盖旧钩子。使用 `--ignore-scripts` 安装依赖后需手动运行 `npm run prepare` 和 `npm run db:generate`。
+运行 `npm install` / `npm ci` 时，prepare 自动安装仓库内 `.githooks/pre-commit`；当前仓库已启用。已有自定义 hooksPath 时安装脚本停止并提示接入，不覆盖旧钩子。使用 `--ignore-scripts` 安装依赖后需手动运行 `npm run prepare` 和 `node --env-file-if-exists=.env node_modules/prisma/build/index.js generate`。
 
 提交钩子根据 HEAD 版本计算下一版本，更新并暂存 `package.json` 与锁文件。提交失败重试不会重复累加；若这两个文件存在尚未暂存的修改，则先停止，避免把未准备提交的修改带入。
 

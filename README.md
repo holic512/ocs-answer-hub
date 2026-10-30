@@ -18,15 +18,17 @@
 git clone https://github.com/holic512/ocs-answer-hub.git
 cd ocs-answer-hub
 npm ci
-npm run setup:local
-npm run db:up
+node scripts/setup-local.mjs
+docker compose -f compose.dev.yaml up -d --wait
 npm run dev
 ```
 
-另开终端：
+`npm run dev` 同时启动后端和前端，按 Ctrl+C 一起停止；无需另开终端。
+
+构建前后端产物：
 
 ```sh
-npm run dev:web
+npm run build
 ```
 
 浏览器访问 **http://127.0.0.1:5173**。数据库没有管理员时，先在初始化页面设置账号和密码，完成后登录；密码至少 8 个字符，不强制特殊符号。
@@ -42,14 +44,14 @@ npm run dev:web
 
 ```sh
 npm test                # 未配置测试库时，仅跳过 PostgreSQL 集成套件；配置后须开启 TEST_DATABASE_RESET=1
-npm run verify          # 要求独立测试库及显式重置同意；测试 + 类型 + 构建 + 依赖审计
+node --env-file-if-exists=.env scripts/verify.mjs          # 要求独立测试库及显式重置同意；测试 + 类型 + 构建 + 依赖审计
 npx playwright install chromium
-npm run test:browser    # 重置独立测试库后运行浏览器验收，不访问真实供应商
+node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts    # 重置独立测试库后运行浏览器验收，不访问真实供应商
 ```
 
 **集成测试和浏览器验收会清空 `TEST_DB_NAME` 指定的 `_test` 库 public schema。** 二者不要并发运行；校验要求 `TEST_DATABASE_RESET=1` 且不能与开发库同名。证据保存到忽略的 `artifacts/verification/`。
 
-单进程本地运行构建产物：把 `.env` 的 `APP_ORIGIN` 改为 `http://127.0.0.1:18771`，然后 `npm run build && npm start`。生产部署请使用 HTTPS。
+单进程本地运行构建产物：把 `.env` 的 `APP_ORIGIN` 改为 `http://127.0.0.1:18771`，然后 `npm run build && node --env-file-if-exists=.env dist/server/index.js`。生产部署请使用 HTTPS。
 
 ## 功能
 

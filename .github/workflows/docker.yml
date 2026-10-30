@@ -48,7 +48,7 @@ jobs:
           cache-from: type=gha,scope=deployment-check
           cache-to: type=gha,mode=max,scope=deployment-check
       - name: 外置配置与部署生命周期验收
-        run: npm run test:deployment
+        run: node scripts/deployment-acceptance.mjs
 
   image:
     needs: test

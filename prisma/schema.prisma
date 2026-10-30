@@ -1,4 +1,4 @@
-// 知序数据库结构。修改后运行 npm run db:migration -- 版本说明生成迁移，勿修改已发布迁移。
+// 知序数据库结构。迁移命令见 docs/DATABASE_AND_VERSIONING.md，勿修改已发布迁移。
 generator client {
   provider = "prisma-client-js"
 }

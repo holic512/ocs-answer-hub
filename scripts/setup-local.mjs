@@ -12,4 +12,4 @@ if(existsSync(target)){
   if(process.platform!=='win32')chmodSync(target,0o600);
   console.log('已生成带随机数据库密码的本地 .env，请勿提交到仓库。');
 }
-console.log('下一步：运行 npm run db:up；使用已有数据库时直接填写 .env 中的数据库配置。');
+console.log('下一步：运行 docker compose -f compose.dev.yaml up -d --wait；使用已有数据库时直接填写 .env 中的数据库配置。');

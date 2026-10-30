@@ -3,14 +3,14 @@
 ## 环境和启动
 
 1. 安装 Node.js 24（可使用 `.nvmrc`）和 Docker Desktop / Docker Compose。
-2. `npm ci && npm run setup:local`，自动生成随机数据库密码及被忽略的 `.env`。
-3. `npm run db:up`，首次初始化应用数据库和默认的 `ocs_answer_hub_test` 测试库；自定义测试库名需自行建库。只使用本项目独立 Docker volume。
-4. 终端一 `npm run dev`，终端二 `npm run dev:web`；打开 http://127.0.0.1:5173。
+2. `npm ci && node scripts/setup-local.mjs`，自动生成随机数据库密码及被忽略的 `.env`。
+3. `docker compose -f compose.dev.yaml up -d --wait`，首次初始化应用数据库和默认的 `ocs_answer_hub_test` 测试库；自定义测试库名需自行建库。只使用本项目独立 Docker volume。
+4. 运行 `npm run dev`，同时启动后端和前端；打开 http://127.0.0.1:5173，按 Ctrl+C 一起停止。构建使用 `npm run build`。
 5. 打开页面，数据库无管理员时先设置管理员账号和密码，然后登录。管理员登录密码与数据库密码、API token、加密主密钥是不同的东西。
 
 Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。已有环境变量优先于 `.env`。`setup:local` 不覆盖已有配置；如手改本地 PG 密码，已初始化的 volume 不会同步改密码，应通过数据库管理方式同步，勿为改密码随意删 volume。
 
-`npm run db:stop` 停止本地 PostgreSQL但保留数据。通常不要用 `docker compose down -v`；`-v` 会删除本地数据库，源码迁移不需要此命令。
+`docker compose -f compose.dev.yaml stop` 停止本地 PostgreSQL但保留数据。通常不要用 `docker compose down -v`；`-v` 会删除本地数据库，源码迁移不需要此命令。
 
 ## 不使用 Docker
 
@@ -23,8 +23,8 @@ Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。
 新示例默认 `TEST_DATABASE_RESET=0`。运行数据库集成测试前，确认专用测试库可清空，再将此项改为 `1`；仅运行非数据库测试时，将 `TEST_DB_NAME` 留空。
 
 - `npm test`：单元与网络夹具；如果没有 `TEST_DB_NAME`，数据库套件明确 skipped。
-- `npm run verify`：必须有 `TEST_DB_NAME` 和 `TEST_DATABASE_RESET=1`；依次测试、类型检查、构建、生产依赖审计。
-- `npm run test:browser`：先构建并安装 Chromium；自身创建浏览器夹具，不依赖先跑集成测试。
+- `node --env-file-if-exists=.env scripts/verify.mjs`：必须有 `TEST_DB_NAME` 和 `TEST_DATABASE_RESET=1`；依次测试、类型检查、构建、生产依赖审计。
+- `node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts`：先构建并安装 Chromium；自身创建浏览器夹具，不依赖先跑集成测试。
 - 测试库名必须以 `_test` 结尾且与 `DB_NAME`不同；仍需自己确认它是专用库。测试会 `DROP SCHEMA public CASCADE`，**绝不能连接线上或承载其他业务的数据**。
 - 数据库集成测试与浏览器验收不能同时运行，它们会重置同一个专用测试库。
 - Chrome 已安装时可设置 `BROWSER_EXECUTABLE_PATH`；受控容器必须关闭 sandbox 时显式设 `BROWSER_NO_SANDBOX=1`，普通桌面不需要。

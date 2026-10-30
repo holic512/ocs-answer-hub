@@ -44,5 +44,5 @@ export async function migrate(pool:pg.Pool){
 }
 async function runPrisma(pool:pg.Pool,args:string[]){
  try{const result=await execute(process.execPath,[cli,...args],{cwd:root,env:{...process.env,PRISMA_DATABASE_URL:pool.options.connectionString},maxBuffer:1024*1024});return result.stdout;}
- catch(error:any){throw new Error(`数据库版本迁移失败（${args.slice(0,2).join(' ')}），请运行 npm run db:status 检查；未启动服务。`,{cause:error});}
+ catch(error:any){throw new Error(`数据库版本迁移失败（${args.slice(0,2).join(' ')}），请参照 docs/DATABASE_AND_VERSIONING.md 检查迁移状态；未启动服务。`,{cause:error});}
 }

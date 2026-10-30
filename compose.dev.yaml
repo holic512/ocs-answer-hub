@@ -5,7 +5,7 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:?请先运行 npm run setup:local 并填写 DB_USER}
+      POSTGRES_USER: ${DB_USER:?请先运行 node scripts/setup-local.mjs 并填写 DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?请先填写 DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME:?请先填写 DB_NAME}
     ports:
