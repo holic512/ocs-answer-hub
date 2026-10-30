@@ -6,16 +6,13 @@ import path from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 const execute=promisify(execFile);
-import {databaseUrl} from '../server/config.js';
 import {createPool,createOrm,migrate} from '../server/db.js';
-import {assertTestDatabaseUrl} from './support/test-database.js';
-// 单独执行，避免与会重建同一 schema 的集成测试并发。
-const enabled=process.env.MIGRATION_TEST==='1';
-test('Prisma initializes, repeats safely, adopts legacy schema and preserves data',{skip:!enabled,timeout:120000},async()=>{
- const url=assertTestDatabaseUrl(databaseUrl(process.env,true),databaseUrl(),process.env.TEST_DATABASE_RESET);
+import {createTestDatabase} from './support/test-database.js';
+test('Prisma initializes, repeats safely, adopts legacy schema and preserves data',{timeout:120000},async()=>{
+ const database=await createTestDatabase();const url=database.url;
  const pool=createPool(url);
  try{
-  await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm');
+  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
   await migrate(pool);await migrate(pool);
   const orm=createOrm(pool);
   const row=await orm.providers.create({data:{name:'迁移保留夹具',kind:'http',priority:1,config_cipher:'fixture'}});
@@ -43,5 +40,5 @@ test('Prisma initializes, repeats safely, adopts legacy schema and preserves dat
    await pool.query('SELECT migration_fixture FROM settings');
    assert.equal((await pool.query('SELECT name FROM providers WHERE id=$1',[row.id])).rows[0].name,'迁移保留夹具');
   }finally{await fs.rm(fixture,{recursive:true,force:true});}
- }finally{await pool.end();}
+ }finally{await pool.end();await database.close();}
 });

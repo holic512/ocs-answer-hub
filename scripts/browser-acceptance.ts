@@ -1,13 +1,24 @@
-import {databaseUrl as configuredDatabaseUrl} from '../server/config.js';
+/**
+ * @file browser-acceptance.ts
+ * @project ocs-answer-hub
+ * @module 浏览器验收
+ * @description 使用默认 Chromium 和临时数据库验证后台主要操作。
+ * @logic 创建隔离数据库、初始化账号、验收页面及来源配置，输出报告后清理。
+ * @dependencies Playwright, Docker, tests/support/test-database
+ * @index_tags browser, acceptance, isolation
+ * @author holic512
+ */
 import {chromium} from 'playwright';import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {buildApp} from '../server/app.js';import {encrypt} from '../server/security.js';
-import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';import {createPool} from '../server/db.js';import {assertTestDatabaseUrl} from '../tests/support/test-database.js';
-const databaseUrl=assertTestDatabaseUrl(configuredDatabaseUrl(process.env,true),configuredDatabaseUrl(),process.env.TEST_DATABASE_RESET);
-const evidence=path.resolve(process.env.EVIDENCE_DIR??'artifacts/verification');await fs.mkdir(evidence,{recursive:true,mode:0o700});
+import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';import {createPool} from '../server/db.js';import {createTestDatabase} from '../tests/support/test-database.js';
+const database=await createTestDatabase();
+try{
+const databaseUrl=database.url;
+const evidence=path.resolve('artifacts/verification');await fs.mkdir(evidence,{recursive:true,mode:0o700});
 const stateDir=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-browser-'));const origin='http://127.0.0.1:18772';
-const reset=createPool(databaseUrl);try{await reset.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm');}finally{await reset.end();}
+const reset=createPool(databaseUrl);try{await reset.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');}finally{await reset.end();}
 const{app,pool,key}=await buildApp({databaseUrl,origin,stateDir,staticDir:fileURLToPath(new URL('../dist/web',import.meta.url)),transport:async(u)=>{if(u.includes('first.example.com'))return {answer:null};throw Object.assign(new Error('fixture-only endpoint'),{code:'UPSTREAM_NETWORK'});},test:true});
 await pool.query('INSERT INTO providers(name,kind,enabled,priority,timeout_ms,config_cipher) VALUES($1,$2,$3,$4,$5,$6)',['first','http',false,1,1000,encrypt({url:'https://first.example.com/query',method:'POST',answerPath:'answer'},key!)]);
-await app.listen({host:'127.0.0.1',port:18772});const browser=await chromium.launch({...(process.env.BROWSER_EXECUTABLE_PATH?{executablePath:process.env.BROWSER_EXECUTABLE_PATH}:{}),headless:true,args:['--disable-dev-shm-usage',...(process.env.BROWSER_NO_SANDBOX==='1'?['--no-sandbox']:[])]});const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')console.log('BROWSER',m.text())});page.on('response',r=>{if(r.status()>=400)console.log('HTTP',r.status(),r.url())});
+const browser=await chromium.launch({headless:true,args:['--disable-dev-shm-usage']}).catch(async error=>{await app.close();await fs.rm(stateDir,{recursive:true,force:true});throw error;});await app.listen({host:'127.0.0.1',port:18772});const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')console.log('BROWSER',m.text())});page.on('response',r=>{if(r.status()>=400)console.log('HTTP',r.status(),r.url())});
 const steps:string[]=[];
 try{
  await page.goto(origin);await page.getByRole('heading',{name:'初始化管理员',exact:true}).waitFor();
@@ -27,3 +38,5 @@ try{
  await page.setViewportSize({width:390,height:844});await page.getByRole('button',{name:'概览',exact:true}).click();await page.getByRole('heading',{name:'知识在这里，一点点积累。'}).waitFor();assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));await page.screenshot({path:evidence+'/test-mobile.png',fullPage:true});steps.push('mobile responsive no horizontal overflow');assert.deepEqual(errors,[]);
  await fs.writeFile(evidence+'/browser-acceptance.json',JSON.stringify({passed:true,fixtureNote:'Isolated test database; upstream simulated only; no provider end-to-end claim',steps,pageErrors:errors},null,2),{mode:0o600});console.log(JSON.stringify({passed:true,steps:steps.length,pageErrors:errors}));
 }finally{await browser.close();await app.close();await fs.rm(stateDir,{recursive:true,force:true});}
+
+}finally{await database.close();}

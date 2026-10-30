@@ -4,30 +4,29 @@
 
 1. 安装 Node.js 24（可使用 `.nvmrc`）和 Docker Desktop / Docker Compose。
 2. `npm ci && node scripts/setup-local.mjs`，自动生成随机数据库密码及被忽略的 `.env`。
-3. `docker compose -f compose.dev.yaml up -d --wait`，首次初始化应用数据库和默认的 `ocs_answer_hub_test` 测试库；自定义测试库名需自行建库。只使用本项目独立 Docker volume。
+3. `docker compose -f compose.dev.yaml up -d --wait`，只初始化应用数据库。只使用本项目独立 Docker volume。
 4. 运行 `npm run dev`，同时启动后端和前端；打开 http://127.0.0.1:5173，按 Ctrl+C 一起停止。构建使用 `npm run build`。
 5. 打开页面，数据库无管理员时先设置管理员账号和密码，然后登录。管理员登录密码与数据库密码、API token、加密主密钥是不同的东西。
 
-Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。已有环境变量优先于 `.env`。`setup:local` 不覆盖已有配置；如手改本地 PG 密码，已初始化的 volume 不会同步改密码，应通过数据库管理方式同步，勿为改密码随意删 volume。
+Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。已有环境变量优先于 `.env`。`setup-local.mjs` 不覆盖已有配置；如手改本地 PG 密码，已初始化的 volume 不会同步改密码，应通过数据库管理方式同步，勿为改密码随意删 volume。
 
 `docker compose -f compose.dev.yaml stop` 停止本地 PostgreSQL但保留数据。通常不要用 `docker compose down -v`；`-v` 会删除本地数据库，源码迁移不需要此命令。
 
 ## 不使用 Docker
 
-手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 和 `ocs_answer_hub_test` 两个**仅本地开发**的数据库，授权开发角色在各自 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行 Prisma 版本迁移。修改模型和提交版本规则见 `docs/DATABASE_AND_VERSIONING.md`。
+手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 开发数据库，授权开发角色在 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行 Prisma 版本迁移。修改模型和提交版本规则见 `docs/DATABASE_AND_VERSIONING.md`。
 
 `compose.dev.yaml` 使用的 PostgreSQL超级用户仅适用于回环地址上的隔离开发，不能直接照搬生产；生产必须使用独立低权限角色。
 
 ## 测试安全
 
-新示例默认 `TEST_DATABASE_RESET=0`。运行数据库集成测试前，确认专用测试库可清空，再将此项改为 `1`；仅运行非数据库测试时，将 `TEST_DB_NAME` 留空。
+测试不加载 `.env`，数据库测试及浏览器验收自动创建独立临时 PostgreSQL 17 容器，使用随机密码和回环随机端口；不连接开发或业务数据库，结束后删除本次容器。运行前需要可用的 Docker，无需填写测试配置。
 
-- `npm test`：单元与网络夹具；如果没有 `TEST_DB_NAME`，数据库套件明确 skipped。
-- `node --env-file-if-exists=.env scripts/verify.mjs`：必须有 `TEST_DB_NAME` 和 `TEST_DATABASE_RESET=1`；依次测试、类型检查、构建、生产依赖审计。
-- `node --env-file-if-exists=.env --import tsx scripts/browser-acceptance.ts`：先构建并安装 Chromium；自身创建浏览器夹具，不依赖先跑集成测试。
-- 测试库名必须以 `_test` 结尾且与 `DB_NAME`不同；仍需自己确认它是专用库。测试会 `DROP SCHEMA public CASCADE`，**绝不能连接线上或承载其他业务的数据**。
-- 数据库集成测试与浏览器验收不能同时运行，它们会重置同一个专用测试库。
-- Chrome 已安装时可设置 `BROWSER_EXECUTABLE_PATH`；受控容器必须关闭 sandbox 时显式设 `BROWSER_NO_SANDBOX=1`，普通桌面不需要。
+- `npm test`：单元、真实 HTTP 及独立 PostgreSQL 集成和迁移测试。
+- `node scripts/verify.mjs`：依次测试、类型检查、构建、生产依赖审计。
+- `npx playwright install chromium`：首次安装 Playwright 默认浏览器。
+- `node --import tsx scripts/browser-acceptance.ts`：先运行 `npm run build`，再执行浏览器验收；不依赖手动启动开发服务。
+- 报告与截图固定保存到 `artifacts/verification`，可通过清理脚本移除。
 - 测试只使用合成题目和本地/注入式上游，不调用实际第三方或 AI；通过不代表真实供应商已通过。
 
 ## 目录

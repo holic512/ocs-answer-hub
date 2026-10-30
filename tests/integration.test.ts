@@ -1,13 +1,11 @@
-import {databaseUrl} from '../server/config.js';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {buildApp,ocsConfig} from '../server/app.js';import {createPool} from '../server/db.js';import {prepare} from '../server/search.js';import {verifyPassword} from '../server/security.js';
-import os from 'node:os';import path from 'node:path';import {assertTestDatabaseUrl} from './support/test-database.js';
-const configuredTestUrl=databaseUrl(process.env,true);
-test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart',{skip:!configuredTestUrl,timeout:120000},async(t)=>{
- const url=assertTestDatabaseUrl(configuredTestUrl,databaseUrl(),process.env.TEST_DATABASE_RESET);
- const pool=createPool(url);t.after(()=>pool.end());
+import os from 'node:os';import path from 'node:path';import {createTestDatabase} from './support/test-database.js';
+test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart',{timeout:120000},async(t)=>{
+ const database=await createTestDatabase();const url=database.url;
+ const pool=createPool(url);t.after(async()=>{await pool.end();await database.close();});
  const state=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-integration-'));t.after(()=>fs.rm(state,{recursive:true,force:true}));
  // This isolated database was created exclusively for automated acceptance.
- await pool.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm');
+ await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
  const calls:string[]=[];let mode='fallback';
  const transport:any=async(u:string,_m:any,_h:any,b:any)=>{calls.push(u);if(u.includes('first'))return {code:0};if(u.includes('second'))return mode==='ai'?{code:0}:{code:1,data:{answer:'B',question:b.title}};return {choices:[{message:{content:'{"answer":"3"}'}}],usage:{total_tokens:12}};};
  let built=await buildApp({databaseUrl:url,pool,origin:'http://127.0.0.1:18771',stateDir:state,transport,test:true});let app=built.app;await app.ready();
@@ -50,7 +48,7 @@ test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart
  const after=(await pool.query('SELECT (SELECT count(*) FROM questions) q,(SELECT count(*) FROM query_events) e,(SELECT count(*) FROM provider_observations) o,(SELECT count(*) FROM providers) p')).rows[0];assert.deepEqual(after,before);
  const created=await req('POST','/api/admin/providers',draft);assert.equal(created.statusCode,201,created.body);const readback=(await req('GET','/api/admin/providers')).json().items.find((x:any)=>x.id===created.json().id);assert.equal(readback.config.url,draft.config.url);await req('DELETE',`/api/admin/providers/${created.json().id}`);
  });
- await t.test('quota, revoked token, SSRF validation and persistence',async()=>{const limited=(await req('POST','/api/admin/tokens',{name:'limited',daily_limit:1,rpm:1})).json();const invoke=()=>app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${limited.token}`},payload:q});assert.equal((await invoke()).statusCode,200);assert.equal((await invoke()).statusCode,429);await req('POST',`/api/admin/tokens/${limited.id}/revoke`,{});assert.equal((await invoke()).statusCode,401);const r=await req('POST','/api/admin/providers',{name:'ssrf',kind:'http',config:{url:'http://127.0.0.1',answerPath:'answer'}});assert.equal(r.statusCode,400);
+ await t.test('quota, revoked token, local provider configuration and persistence',async()=>{const limited=(await req('POST','/api/admin/tokens',{name:'limited',daily_limit:1,rpm:1})).json();const invoke=()=>app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${limited.token}`},payload:q});assert.equal((await invoke()).statusCode,200);assert.equal((await invoke()).statusCode,429);await req('POST',`/api/admin/tokens/${limited.id}/revoke`,{});assert.equal((await invoke()).statusCode,401);const r=await req('POST','/api/admin/providers',{name:'local',kind:'http',config:{url:'http://127.0.0.1',answerPath:'answer'}});assert.equal(r.statusCode,201);
  const key=built.key;await app.close();built=await buildApp({databaseUrl:url,pool,origin,stateDir:state,transport,test:true});app=built.app;await app.ready();assert.equal(built.key,key);assert.equal((await built.engine.local(prepare(q))).answer,'3');assert.equal((await pool.query('SELECT count(*) FROM administrators')).rows[0].count,'1');assert.equal((await req('GET','/api/setup',undefined,false)).json().required,false);assert.equal((await pool.query('SELECT username FROM administrators WHERE id=1')).rows[0].username,'owner-test');await assert.rejects(fs.access(state+'/bootstrap-admin.json'));});
  await app.close();
 });

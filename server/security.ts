@@ -1,7 +1,16 @@
+/**
+ * @file security.ts
+ * @project ocs-answer-hub
+ * @module 凭据与上游传输
+ * @description 密码哈希、配置加密脱敏及 HTTP/HTTPS 上游请求。
+ * @logic 保护已存凭据；解析并固定目标地址，请求不区分公网和私网，保留超时及响应诊断。
+ * @dependencies node:crypto, node:dns/promises, undici
+ * @index_tags credentials, encryption, upstream
+ * @author holic512
+ */
 import crypto from 'node:crypto';
 import {promisify} from 'node:util';
 import {lookup} from 'node:dns/promises';
-import ipaddr from 'ipaddr.js';
 import {Agent,request} from 'undici';
 const scrypt=promisify(crypto.scrypt);
 export const randomToken=(bytes=32)=>crypto.randomBytes(bytes).toString('base64url');
@@ -13,17 +22,16 @@ export function decrypt(value:string,key:string):any{const [iv,tag,data]=value.s
 const secretName=/token|secret|api.?key|password|authorization|cookie/i;
 export function redact(value:any,name=''):any{if(secretName.test(name))return value?'********':'';if(Array.isArray(value))return value.map(x=>redact(x));if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,redact(v,k)]));return value;}
 export function restoreSecrets(value:any,old:any):any{if(value==='********')return old??'';if(Array.isArray(value))return value.map((x,i)=>restoreSecrets(x,old?.[i]));if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,restoreSecrets(v,old?.[k])]));return value;}
-export function isPublicIp(ip:string){try{let addr=ipaddr.parse(ip);if(addr.kind()==='ipv6'&&(addr as ipaddr.IPv6).isIPv4MappedAddress())addr=(addr as ipaddr.IPv6).toIPv4Address();return addr.range()==='unicast'&&!(addr.kind()==='ipv6'&&['2002:','64:ff9b:','64:ff9b:1:'].some(prefix=>addr.toString().toLowerCase().startsWith(prefix)));}catch{return false;}}
-export function validateUrl(raw:string,allowHosts:string[]=[]){const u=new URL(raw);const allowed=allowHosts.includes(u.hostname);if(u.username||u.password||u.hash)throw new Error('上游地址不能包含用户密码或片段');if(!['http:','https:'].includes(u.protocol))throw new Error('上游地址仅支持 HTTP 或 HTTPS');if(ipaddr.isValid(u.hostname.replace(/^\[|\]$/g,''))&&!isPublicIp(u.hostname.replace(/^\[|\]$/g,''))&&!allowed)throw new Error('禁止访问私有网络地址');return u;}
+export function validateUrl(raw:string){const u=new URL(raw);if(u.username||u.password||u.hash)throw new Error('上游地址不能包含用户密码或片段');if(!['http:','https:'].includes(u.protocol))throw new Error('上游地址仅支持 HTTP 或 HTTPS');return u;}
 export type NetworkEvent={stage:'dns'|'connect'|'http'|'json';status:'passed'|'failed';message:string;httpStatus?:number;durationMs:number};
 export class UpstreamError extends Error{constructor(public code:string,message:string,public httpStatus?:number){super(message);this.name='UpstreamError';}}
-export async function safeRequest(raw:string,method:string,headers:Record<string,string>,body:any,timeout:number,allowHosts:string[]=[],observe?:(event:NetworkEvent)=>void):Promise<any>{
+export async function safeRequest(raw:string,method:string,headers:Record<string,string>,body:any,timeout:number,observe?:(event:NetworkEvent)=>void):Promise<any>{
  const started=Date.now(),deadline=started+timeout;const emit=(stage:NetworkEvent['stage'],status:NetworkEvent['status'],message:string,httpStatus?:number)=>observe?.({stage,status,message,durationMs:Date.now()-started,...(httpStatus?{httpStatus}:{})});
- let u:URL;try{u=validateUrl(raw,allowHosts);}catch{throw new UpstreamError('UPSTREAM_ADDRESS','上游地址或网络范围不符合安全限制');}
+ let u:URL;try{u=validateUrl(raw);}catch{throw new UpstreamError('UPSTREAM_ADDRESS','上游地址格式无效或协议不受支持');}
  const host=u.hostname.replace(/^\[|\]$/g,'');let addresses:Array<{address:string;family:number}>;let timer:ReturnType<typeof setTimeout>|undefined;
  try{addresses=await Promise.race([lookup(host,{all:true}),new Promise<never>((_r,reject)=>{timer=setTimeout(()=>reject(new UpstreamError('UPSTREAM_TIMEOUT','DNS解析超时')),Math.max(1,timeout))})]);}
  catch(e:any){emit('dns','failed',e.code==='UPSTREAM_TIMEOUT'?'DNS解析超时':'DNS解析失败');throw new UpstreamError(e.code==='UPSTREAM_TIMEOUT'?'UPSTREAM_TIMEOUT':'UPSTREAM_DNS','DNS解析失败或超时');}finally{if(timer)clearTimeout(timer);}
- if(!addresses.length||(!allowHosts.includes(u.hostname)&&addresses.some(a=>!isPublicIp(a.address)))){emit('dns','failed','解析地址不在允许的公网范围');throw new UpstreamError('UPSTREAM_ADDRESS','上游 DNS 指向非公网地址');}
+ if(!addresses.length){emit('dns','failed','DNS未返回可用地址');throw new UpstreamError('UPSTREAM_DNS','DNS未返回可用地址');}
  emit('dns','passed','DNS解析通过，连接地址已固定');const remaining=Math.max(1,deadline-Date.now());
  const target=addresses[0];const agent=new Agent({connect:{lookup:((_h:any,opts:any,cb:any)=>opts?.all?cb(null,[target]):cb(null,target.address,target.family)) as any,timeout:Math.min(remaining,10000)}});
  let connected=false;

@@ -50,6 +50,6 @@ Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；�
 
 ## 验证
 
-常规 `npm test` 覆盖版本进位及真实隔离 Git 提交。数据库集成测试和迁移测试必须串行运行，只使用专用 `_test` 库。
+常规 `npm test` 覆盖版本进位及真实隔离 Git 提交。数据库集成和迁移测试分别使用自动创建的临时 PostgreSQL 容器，不读取业务库配置。
 
-迁移测试使用 `MIGRATION_TEST=1`、`TEST_DB_NAME`、`TEST_DATABASE_RESET=1`，单独执行 `node --env-file=.env --import tsx --test tests/migrations.test.ts`；它会清空专用测试库，验证初始化、重复迁移、旧库接管、数据保留和后续版本更新。默认不运行该测试。
+迁移测试已纳入 `npm test`，也可单独执行 `node --import tsx --test tests/migrations.test.ts`。测试在独立临时容器内验证初始化、重复迁移、旧库接管、数据保留和后续版本更新，结束自动删除临时容器，无需测试配置或重置开关。

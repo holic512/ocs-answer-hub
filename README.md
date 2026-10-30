@@ -198,7 +198,7 @@ npm run dev
 
 访问 `http://127.0.0.1:5173`。`setup-local.mjs` 不覆盖已有 `.env`，只为本地数据库生成密码；管理员仍由首次页面创建。使用已有 PostgreSQL 时填写 `.env` 的五项数据库字段，无需启动本地 Docker 数据库。
 
-本地数据库默认映射到 `127.0.0.1:15432`，开发库与测试库隔离。前端默认 `5173`，通过代理访问后端 `18771`；`APP_ORIGIN` 必须与浏览器地址一致。停止本地数据库并保留数据：
+本地数据库默认映射到 `127.0.0.1:15432`，测试数据库由验收工具自动创建到独立临时容器。前端默认 `5173`，通过代理访问后端 `18771`；`APP_ORIGIN` 必须与浏览器地址一致。停止本地数据库并保留数据：
 
 ```sh
 docker compose -f compose.dev.yaml stop
@@ -220,7 +220,7 @@ npm test
 python3 -B -m unittest discover -s tests -p test_deploy.py
 ```
 
-没有 `TEST_DB_NAME` 时跳过数据库测试。运行数据库集成或浏览器验收前，必须使用独立且以 `_test` 结尾的测试库，并显式设置 `TEST_DATABASE_RESET=1`；测试会清空该库的 public schema，不得连接业务库，二者也不能同时运行。
+运行 `npm test` 需要 Docker。数据库测试自动创建独立临时 PostgreSQL 容器，使用随机端口和密码，结束后自动清理；不读取 `.env` 或连接业务数据库，无需填写测试配置。浏览器验收使用 Playwright 默认 Chromium，报告与截图固定保存到 `artifacts/verification`。
 
 浏览器、迁移及 Docker 生命周期验收的直接命令见[本地开发](docs/LOCAL_DEVELOPMENT.md#测试安全)、[数据库迁移](docs/DATABASE_AND_VERSIONING.md#验证)和[部署验收](deploy/OPERATIONS.md#备份与验收)。
 
@@ -255,7 +255,7 @@ node scripts/clean.mjs
 | 升级迁移失败 | 查看应用日志和迁移记录，按[迁移说明](docs/DATABASE_AND_VERSIONING.md)处理，保留业务数据 |
 | 丢失主密钥后上游配置无法解密 | 恢复原主密钥，或重新填写上游密钥；不要给旧数据库随意更换主密钥 |
 
-上游支持 HTTP / HTTPS 和自定义端口；HTTP 会明文传输题目及凭据。私网上游需通过 `UPSTREAM_ALLOW_HOSTS` 精确授权，公网支持不等于放开内网访问限制。
+上游支持 HTTP / HTTPS、自定义端口、公网、局域网、容器主机名、回环地址及 IPv6，无需配置白名单。HTTP 会明文传输题目及凭据；容器内的回环地址指向应用容器自身。
 
 ## 参考文档
 

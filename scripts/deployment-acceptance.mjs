@@ -23,7 +23,7 @@ const directory=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'ocs-de
 const preplaced=path.join(directory,'preplaced');
 const steps=[];
 let activeImage=image;
-let networkCreated=false,postgresCreated=false,upgradeCreated=false;
+let networkCreated=false,postgresCreated=false,upstreamCreated=false,upgradeCreated=false;
 const docker=(args,options={})=>execFileSync('docker',args,{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,...options}).trim();
 const operations=args=>execFileSync('python3',['-B','delpoy/deploy.py',...args,'--dir',directory],{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,env:{...process.env,COMPOSE_PROJECT_NAME:project}}).trim();
 const compose=(args,dir=directory)=>docker(['compose','--project-name',dir===preplaced?project+'-preplaced':project,'--project-directory',dir,'-f',path.join(dir,'compose.yml'),...args],{env:{...process.env,APP_IMAGE:activeImage,DATABASE_NETWORK:network,APP_PORT:'0',BIND_ADDRESS:'127.0.0.1'}});
@@ -64,6 +64,12 @@ try{
  const installedConfig=hash('config/config.env');
  operations(['install','--no-pull']);assert.equal(hash('config/config.env'),installedConfig);
  operations(['check']);operations(['status']);operations(['logs','--tail','5']);
+ const upstream=project+'-upstream';
+ docker(['run','-d','--rm','--name',upstream,'--network',network,'--network-alias','local-upstream','--entrypoint','node',image,'-e',"require('http').createServer((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answer:'private-network-fixture'}));}).listen(8080,'0.0.0.0')"]);upstreamCreated=true;
+ const internalAnswer=compose(['exec','-T','app','node','--input-type=module','-e',"import {safeRequest} from './dist/server/security.js';console.log(JSON.stringify(await safeRequest('http://local-upstream:8080/query','GET',{},null,5000)))"]);
+ assert.equal(JSON.parse(internalAnswer).answer,'private-network-fixture');
+ steps.push('容器内通过内网主机名直接请求真实 HTTP 上游，无需白名单或网段授权');
+
  const setupStatus=()=>JSON.parse(compose(['exec','-T','app','node','-e',"fetch('http://127.0.0.1:18771/api/setup').then(r=>r.text()).then(console.log)"]));
  assert.equal(setupStatus().required,true);
  assert.equal(helper("console.log(require('fs').existsSync('/fixture/storage/bootstrap-admin.json'))"),'false');
@@ -112,6 +118,7 @@ try{
 }finally{
  try{compose(['down','--remove-orphans']);}catch{}
  try{compose(['down','--remove-orphans'],preplaced);}catch{}
+ if(upstreamCreated)try{docker(['rm','-f',project+'-upstream']);}catch{}
  if(postgresCreated)try{docker(['rm','-f',postgres]);}catch{}
  if(networkCreated)try{docker(['network','rm',network]);}catch{}
  if(upgradeCreated)try{docker(['image','rm',upgrade]);}catch{}

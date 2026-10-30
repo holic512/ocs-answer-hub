@@ -142,9 +142,9 @@ sh deploy.sh ghcr.io/holic512/ocs-answer-hub:目标版本 ./data/ocs-answer-hub
 
 ### 从旧版 state/.env 部署迁移
 
-先备份并停止旧应用，保留 PostgreSQL。将原 state 目录内容完整复制到 storage，或将新 Compose 的存储绑定源改为原 state 绝对路径。将旧应用 `.env` 中的五项数据库配置、APP_ORIGIN、已有 MASTER_KEY（如设置过）和上游白名单填入 config/config.env，其他测试字段不要复制进运行配置。
+先备份并停止旧应用，保留 PostgreSQL。将原 state 目录内容完整复制到 storage，或将新 Compose 的存储绑定源改为原 state 绝对路径。将旧应用 `.env` 中的五项数据库配置和 APP_ORIGIN 填入 config/config.env。配置仅保留数据库、访问地址及所需监听和存储字段，不再填写测试参数、上游白名单或手动密钥。
 
-必须保留原 master.key；不要让旧数据库配上新生成的密钥。容器用户保持 UID/GID 1000，原有文件应具有对应读写权限。应用会接管已确认的旧数据库基线；不会重置管理员或清空题库。
+如果旧部署曾通过环境变量手动指定加密主密钥，请先将原值保存为 `storage/master.key` 并设置应用用户可读取的权限，再移除旧密钥配置。必须保留原 master.key；不要让旧数据库配上新生成的密钥。容器用户保持 UID/GID 1000，原有文件应具有对应读写权限。应用会接管已确认的旧数据库基线；不会重置管理员或清空题库。
 
 ## 备份与验收
 

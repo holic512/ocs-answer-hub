@@ -12,7 +12,6 @@ services:
       - "127.0.0.1:${DB_PORT:-15432}:5432"
     volumes:
       - local-postgres:/var/lib/postgresql/data
-      - ./deploy/local/01-create-test.sql:/docker-entrypoint-initdb.d/01-create-test.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s

@@ -1,10 +1,20 @@
+/**
+ * @file engine.ts
+ * @project ocs-answer-hub
+ * @module 检索引擎
+ * @description 按来源顺序查题并持久化有效答案、冲突及查询记录。
+ * @logic 本地优先、来源回退、请求合并和配额内查询，不区分上游地址网段。
+ * @dependencies pg, search, providers, security
+ * @index_tags query, fallback, persistence
+ * @author holic512
+ */
 import type pg from 'pg';
 import {prepare,fuzzySafe,canonicalAnswer,type QuestionInput,type Prepared} from './search.js';
 import {decrypt,encrypt,safeRequest} from './security.js';
 import {queryProvider,type Transport} from './providers.js';
 export class Engine{
  private inflight=new Map<string,Promise<any>>();private providerQueues=new Map<string,Promise<void>>();
- constructor(public pool:pg.Pool,public key:string,public transport?:Transport,public allowHosts:string[]=[]){ }
+ constructor(public pool:pg.Pool,public key:string,public transport?:Transport){ }
  async store(q:Prepared,answer:string,source:string,verified=false){
   const client=await this.pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[q.key]);
    const old=(await client.query('SELECT * FROM questions WHERE fingerprint=$1 FOR UPDATE',[q.key])).rows[0];
@@ -30,12 +40,12 @@ export class Engine{
   const acquired=await Promise.race([previous.then(()=>true),new Promise<boolean>(resolve=>{timer=setTimeout(()=>resolve(false),remaining)})]);if(timer)clearTimeout(timer);
   if(!acquired){previous.finally(release);attempts.push({source:p.name,status:'skipped',message:'等待来源时已达到总超时'});break;}
   try{let observed:any=undefined;const capture:Transport=async(...args)=>{const result=await (this.transport??safeRequest)(...args);observed=result;return result;};
-   const result=await queryProvider({...p,config:decrypt(p.config_cipher,this.key)},q,Math.max(1,Math.min(deadline-Date.now(),p.timeout_ms)),capture,this.allowHosts);
+   const result=await queryProvider({...p,config:decrypt(p.config_cipher,this.key)},q,Math.max(1,Math.min(deadline-Date.now(),p.timeout_ms)),capture);
    if(observed!==undefined)await this.pool.query('INSERT INTO provider_observations(fingerprint,title,source,status,response_cipher) VALUES($1,$2,$3,$4,$5)',[q.key,q.title,p.name,result?'valid':'no_valid_answer',encrypt(observed,this.key)]);
    if(!result){attempts.push({source:p.name,status:'miss',durationMs:Date.now()-start});continue;}
    const row=await this.store(q,result.answer,result.ai?`${p.name} · AI`:p.name,false);if(row.conflict){attempts.push({source:p.name,status:'conflict',message:'与本地历史答案冲突，未自动采用'});continue;}attempts.push({source:p.name,status:'hit',durationMs:Date.now()-start,...(result.usage?{usage:result.usage}:{})});
    return {code:1,question:q.title,answer:result.answer,source:p.name,questionId:row.id,verified:false,match:'external',ai:result.ai,attempts};
-  }catch(e:any){const msg=/HTTP \d+/.exec(e.message)?.[0]??(/非公网|私有|HTTPS|端口/.test(e.message)?'上游地址不符合安全限制':'请求失败、超时或数据格式不正确');attempts.push({source:p.name,status:'error',durationMs:Date.now()-start,message:msg});}
+  }catch(e:any){const msg=/HTTP \d+/.exec(e.message)?.[0]??'请求失败、超时或数据格式不正确';attempts.push({source:p.name,status:'error',durationMs:Date.now()-start,message:msg});}
   finally{release();if(this.providerQueues.get(p.id)===current)this.providerQueues.delete(p.id);}
  }
  return {code:0,question:q.title,answer:null,source:null,message:'未找到可用答案，请在后台配置题库源或人工补充',attempts};

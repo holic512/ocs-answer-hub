@@ -22,9 +22,7 @@ const runtimeSchema=z.object({
  APP_ORIGIN:z.string().refine(value=>{try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&url.origin===value;}catch{return false;}},'请填写完整的 HTTP/HTTPS 访问地址，不带路径或末尾斜杠').default('http://127.0.0.1:18771'),
  HOST:z.string().min(1).refine(value=>isIP(value)!==0||/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value),'监听地址只能填写主机名或 IP').default('127.0.0.1'),
  PORT:z.coerce.number().int().min(1).max(65535).default(18771),
- STATE_DIR:z.string().min(1).default('./state'),
- MASTER_KEY:z.union([z.literal(''),z.string().regex(/^[0-9a-f]{64}$/i,'必须为 64 位十六进制密钥')]).optional(),
- UPSTREAM_ALLOW_HOSTS:z.string().default('')
+ STATE_DIR:z.string().min(1).default('./state')
 });
 
 export function loadRuntimeConfig({env=process.env,file=env.CONFIG_FILE}:{env?:NodeJS.ProcessEnv;file?:string}={}){
@@ -36,7 +34,7 @@ export function loadRuntimeConfig({env=process.env,file=env.CONFIG_FILE}:{env?:N
  const parsed=runtimeSchema.safeParse({...inherited,...external});
  if(!parsed.success)throw new Error('运行配置无效：'+parsed.error.issues.map(issue=>`${issue.path.join('.')}：${issue.message}`).join('；'));
  const values=parsed.data;
- return {databaseUrl:databaseUrl({...values,DB_PORT:String(values.DB_PORT),PORT:String(values.PORT)})!,origin:values.APP_ORIGIN,host:values.HOST,port:values.PORT,stateDir:values.STATE_DIR,key:values.MASTER_KEY||undefined,allowHosts:values.UPSTREAM_ALLOW_HOSTS.split(',').map(value=>value.trim()).filter(Boolean)};
+ return {databaseUrl:databaseUrl({...values,DB_PORT:String(values.DB_PORT),PORT:String(values.PORT)})!,origin:values.APP_ORIGIN,host:values.HOST,port:values.PORT,stateDir:values.STATE_DIR};
 }
 
 function readConfigFile(file:string){
@@ -58,9 +56,8 @@ function readConfigFile(file:string){
  return parseEnv(text);
 }
 
-export function databaseUrl(env:NodeJS.ProcessEnv=process.env,test=false):string|undefined {
- const name=test?env.TEST_DB_NAME:env.DB_NAME;
- if(test&&!name)return undefined;
+export function databaseUrl(env:NodeJS.ProcessEnv=process.env):string {
+ const name=env.DB_NAME;
  for(const key of ['DB_HOST','DB_USER','DB_PASSWORD'] as const){if(!env[key])throw new Error(`请在 .env 中填写 ${key}（${{DB_HOST:'数据库地址',DB_USER:'数据库用户名',DB_PASSWORD:'数据库密码'}[key]}）`);}
  if(!name)throw new Error('请在 .env 中填写 DB_NAME（数据库名）');
  const port=env.DB_PORT??'5432';
