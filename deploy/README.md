@@ -1,6 +1,6 @@
 # Python 基础运维
 
-目录名按项目要求使用 `delpoy`，原 `deploy/` 继续保存镜像构建和 Compose 模板。
+本目录包含 Python 运维工具、镜像构建文件和 Compose 模板。
 
 需要 Python 3.8+、Docker Engine 和 Docker Compose 插件，无需 pip 依赖。`install` 安装知序应用，不自动安装 Docker、不创建数据库、不修改现有数据库网络。
 
@@ -13,7 +13,7 @@
 ## 安装
 
 ```sh
-python3 delpoy/deploy.py install --dir /data/ocs-answer-hub --network 已有数据库网络名
+python3 deploy/deploy.py install --dir /data/ocs-answer-hub --network 已有数据库网络名
 ```
 
 默认镜像为 `ghcr.io/holic512/ocs-answer-hub:latest`；可用 `--image` 指定已发布版本，`--port` 指定宿主机端口，`--bind` 指定宿主机 IP。默认仅绑定 `127.0.0.1:18771`。
@@ -26,25 +26,25 @@ python3 delpoy/deploy.py install --dir /data/ocs-answer-hub --network 已有数�
 
 ```sh
 # 启动；也用于应用修改后的 Compose 参数，会按需重新创建容器。
-python3 delpoy/deploy.py start --dir /data/ocs-answer-hub
+python3 deploy/deploy.py start --dir /data/ocs-answer-hub
 
 # 修改 config/config.env 后重启，仅重启应用，不改变 Docker 创建参数。
-python3 delpoy/deploy.py restart --dir /data/ocs-answer-hub
+python3 deploy/deploy.py restart --dir /data/ocs-answer-hub
 
 # 拉取已保存的镜像并更新；latest 获取最新内容，固定版本继续使用原版本。
-python3 delpoy/deploy.py update --dir /data/ocs-answer-hub
+python3 deploy/deploy.py update --dir /data/ocs-answer-hub
 
 # 升级到指定的已发布版本；成功后保存新镜像版本。
-python3 delpoy/deploy.py update --dir /data/ocs-answer-hub --image ghcr.io/holic512/ocs-answer-hub:目标版本
+python3 deploy/deploy.py update --dir /data/ocs-answer-hub --image ghcr.io/holic512/ocs-answer-hub:目标版本
 
 # 停止，保留容器、配置、存储和数据库数据。
-python3 delpoy/deploy.py stop --dir /data/ocs-answer-hub
+python3 deploy/deploy.py stop --dir /data/ocs-answer-hub
 
 # 状态、日志和配置校验。
-python3 delpoy/deploy.py status --dir /data/ocs-answer-hub
-python3 delpoy/deploy.py logs --dir /data/ocs-answer-hub --tail 100
-python3 delpoy/deploy.py logs --dir /data/ocs-answer-hub -f
-python3 delpoy/deploy.py check --dir /data/ocs-answer-hub
+python3 deploy/deploy.py status --dir /data/ocs-answer-hub
+python3 deploy/deploy.py logs --dir /data/ocs-answer-hub --tail 100
+python3 deploy/deploy.py logs --dir /data/ocs-answer-hub -f
+python3 deploy/deploy.py check --dir /data/ocs-answer-hub
 ```
 
 安装或更新支持 `--no-pull`，用于已通过 `docker load` 导入镜像的离线环境。`--port 0` 可让 Docker 自动分配宿主机端口，通过 `status` 查看。

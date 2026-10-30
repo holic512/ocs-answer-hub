@@ -19,7 +19,7 @@ if(args.some(arg=>arg!=='--dry-run')){
 }
 const root=fileURLToPath(new URL('../',import.meta.url));
 const preview=args.includes('--dry-run');
-const targets=['dist','artifacts','coverage','.vite','playwright-report','test-results','node_modules/.vite','node_modules/.cache','delpoy/__pycache__','tests/__pycache__'];
+const targets=['dist','artifacts','coverage','.vite','playwright-report','test-results','node_modules/.vite','node_modules/.cache','deploy/__pycache__','tests/__pycache__'];
 let count=0;
 for(const target of targets){
  const file=path.join(root,target);

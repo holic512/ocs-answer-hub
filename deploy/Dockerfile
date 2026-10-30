@@ -27,7 +27,7 @@ COPY server/config.ts ./server/config.ts
 COPY deploy/config.env.example ./defaults/config.env
 COPY deploy/compose.yaml ./defaults/compose.yml
 COPY deploy/deploy.sh ./defaults/deploy.sh
-COPY delpoy/deploy.py ./defaults/deploy.py
+COPY deploy/deploy.py ./defaults/deploy.py
 RUN node node_modules/@prisma/engines/scripts/postinstall.js \
     && mkdir -p /app/config /app/storage /app/logs \
     && chown node:node /app/config /app/storage /app/logs

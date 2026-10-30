@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("hub_deploy", ROOT / "delpoy" / "deploy.py")
+SPEC = importlib.util.spec_from_file_location("hub_deploy", ROOT / "deploy" / "deploy.py")
 deploy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(deploy)
 
@@ -21,8 +21,8 @@ class DeploymentTests(unittest.TestCase):
         return argparse.Namespace(**values)
 
     def test_python38_syntax_and_help(self):
-        ast.parse((ROOT / "delpoy" / "deploy.py").read_text(encoding="utf-8"), feature_version=(3, 8))
-        result = subprocess.run([sys.executable, "-B", str(ROOT / "delpoy" / "deploy.py"), "--help"], capture_output=True, text=True)
+        ast.parse((ROOT / "deploy" / "deploy.py").read_text(encoding="utf-8"), feature_version=(3, 8))
+        result = subprocess.run([sys.executable, "-B", str(ROOT / "deploy" / "deploy.py"), "--help"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0)
         self.assertIn("install,start,restart,update,stop,status,logs,check", result.stdout)
 
@@ -60,7 +60,7 @@ class DeploymentTests(unittest.TestCase):
             for values in (dict(port=-1), dict(port=65536), dict(image="bad image"), dict(network="bad/network"), dict(bind="not-an-ip")):
                 with self.assertRaises(RuntimeError):
                     deploy.settings_for(root, self.options(**values))
-            result = subprocess.run([sys.executable, "-B", str(ROOT / "delpoy" / "deploy.py"), "stop", "--dir", str(root)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, "-B", str(ROOT / "deploy" / "deploy.py"), "stop", "--dir", str(root)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
             self.assertIn("尚未安装", result.stderr)
             self.assertFalse((root / "config").exists())

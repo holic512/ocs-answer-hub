@@ -25,7 +25,7 @@ const steps=[];
 let activeImage=image;
 let networkCreated=false,postgresCreated=false,upstreamCreated=false,upgradeCreated=false;
 const docker=(args,options={})=>execFileSync('docker',args,{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,...options}).trim();
-const operations=args=>execFileSync('python3',['-B','delpoy/deploy.py',...args,'--dir',directory],{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,env:{...process.env,COMPOSE_PROJECT_NAME:project}}).trim();
+const operations=args=>execFileSync('python3',['-B','deploy/deploy.py',...args,'--dir',directory],{encoding:'utf8',stdio:['pipe','pipe','pipe'],maxBuffer:8*1024*1024,env:{...process.env,COMPOSE_PROJECT_NAME:project}}).trim();
 const compose=(args,dir=directory)=>docker(['compose','--project-name',dir===preplaced?project+'-preplaced':project,'--project-directory',dir,'-f',path.join(dir,'compose.yml'),...args],{env:{...process.env,APP_IMAGE:activeImage,DATABASE_NETWORK:network,APP_PORT:'0',BIND_ADDRESS:'127.0.0.1'}});
 const helper=(code,input,dir=directory)=>docker(['run','--rm','-i','--user','0:0','--entrypoint','node','--mount',`type=bind,source=${dir},target=/fixture`,image,'-e',code],{input});
 const configText=(origin='https://first.example.com')=>`DB_HOST=postgres\nDB_PORT=5432\nDB_NAME=answer_hub\nDB_USER=postgres\nDB_PASSWORD=isolated-deployment-fixture\nAPP_ORIGIN=${origin}\n`;

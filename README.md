@@ -168,7 +168,7 @@ python3 deploy.py update --dir /data/ocs-answer-hub --image ghcr.io/holic512/ocs
 | 镜像版本 | `update`：拉取目标镜像、校验并重新创建 |
 | 停止服务 | `stop`：保留容器、配置和业务数据 |
 
-首次安装或更新可使用 `--bind`、`--port` 调整宿主机监听参数；离线导入镜像后可加 `--no-pull`。完整参数见 [Python 运维说明](delpoy/README.md)。
+首次安装或更新可使用 `--bind`、`--port` 调整宿主机监听参数；离线导入镜像后可加 `--no-pull`。完整参数见 [Python 运维说明](deploy/README.md)。
 
 升级前备份 PostgreSQL、`config/config.env`、`storage/`、`compose.yml` 和部署参数 `.env`。迁移失败时应用停止启动，不会清空数据库；脚本不会自动回滚数据库。恢复时应停止应用，并恢复同一备份时点的数据库及密钥。
 
@@ -278,7 +278,7 @@ node scripts/clean.mjs
 | --- | --- |
 | [配置参考](docs/CONFIGURATION.md) | 数据库、运行配置和三类上游来源字段 |
 | [部署与恢复](deploy/OPERATIONS.md) | Compose、预置配置、发布规则及旧部署迁移 |
-| [Python 运维](delpoy/README.md) | 安装、启停、更新、日志及离线参数 |
+| [Python 运维](deploy/README.md) | 安装、启停、更新、日志及离线参数 |
 | [本地开发](docs/LOCAL_DEVELOPMENT.md) | 开发环境、测试隔离及目录说明 |
 | [数据库与版本](docs/DATABASE_AND_VERSIONING.md) | Prisma 迁移与每次提交的版本递增规则 |
 | [日志与追溯](docs/LOGGING.md) | 请求编号、操作审计、查题链路、脱敏及排错方法 |

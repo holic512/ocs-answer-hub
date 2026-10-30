@@ -203,4 +203,4 @@ node scripts/deployment-acceptance.mjs
 
 ## Python 运维入口
 
-新增 `delpoy/deploy.py`，提供 install、start、restart、update、stop、status、logs、check，复用本文部署目录。使用 Python 3.8+ 标准库，无需 pip 依赖。原 Shell 脚本继续兼容；命令和参数见 `delpoy/README.md`。镜像内同时保存 `/app/defaults/deploy.py`，供服务器取出使用。
+新增 `deploy/deploy.py`，提供 install、start、restart、update、stop、status、logs、check，复用本文部署目录。使用 Python 3.8+ 标准库，无需 pip 依赖。原 Shell 脚本继续兼容；命令和参数见 `deploy/README.md`。镜像内同时保存 `/app/defaults/deploy.py`，供服务器取出使用。
