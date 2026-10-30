@@ -115,7 +115,9 @@ try{
  steps.push('重新创建容器后配置与加密主密钥保留');
 
  const oldImage=inspect().Image;
- docker(['buildx','build','--load','-t',upgrade,'-f','-','.'],{input:`FROM ${image}\nUSER root\nRUN printf '\\n# 新镜像的模板变更，旧配置不会被覆盖\\n' >> /app/defaults/config.env\nLABEL deployment.verification=next\nUSER node\n`});upgradeCreated=true;
+ // 验收基础镜像仅加载到 Docker Engine；独立的 Buildx 容器无法直接使用它。
+ const engineBuilder=docker(['context','show']);
+ docker(['buildx','build','--builder',engineBuilder,'--load','-t',upgrade,'-f','-','.'],{input:`FROM ${image}\nUSER root\nRUN printf '\\n# 新镜像的模板变更，旧配置不会被覆盖\\n' >> /app/defaults/config.env\nLABEL deployment.verification=next\nUSER node\n`});upgradeCreated=true;
  activeImage=upgrade;
  operations(['update','--no-pull','--image',upgrade]);await healthy();
  assert((await fs.readFile(path.join(directory,'.env'),'utf8')).includes('APP_IMAGE='+upgrade));
