@@ -1,24 +1,51 @@
 # 配置参考
 
-## 应用和开发环境变量
+## 最少需要填写的数据库配置
+
+本地使用项目根 `.env`，示例见 `.env.example`；新容器部署参考 `deploy/.env.example`。示例与实际配置使用同一组字段。不再使用 `DATABASE_URL`、`TEST_DATABASE_URL` 或 `PG_LOCAL_*`。
+
+```dotenv
+# 数据库地址，不带协议和端口
+DB_HOST=127.0.0.1
+DB_PORT=5432
+DB_NAME=answer_hub
+DB_USER=answer_hub
+# 直接填写原密码，不需要 URL 编码；包含 # 或空格时用引号包裹
+DB_PASSWORD="请填写数据库密码"
+```
+
+| 变量 | 含义与填写要求 |
+| --- | --- |
+| `DB_HOST` | 数据库地址；本机填 `127.0.0.1`，容器填写容器内可访问地址 |
+| `DB_PORT` | PostgreSQL 端口，默认 `5432`；本项目开发 Docker 默认 `15432` |
+| `DB_NAME` | 已创建的数据库名称 |
+| `DB_USER` | 数据库用户名，生产使用项目专用低权限账号 |
+| `DB_PASSWORD` | 数据库密码原文，应用自动处理连接地址编码 |
+
+`npm run setup:local` 会生成中文注释的 `.env` 和随机密码，不覆盖已有文件。本地 Docker 直接复用相同字段，无需再维护一份账号密码。已有数据库卷不会因修改 `.env` 自动更新账号、密码或库名，需在数据库中同步修改。
+
+## 应用配置
 
 | 变量 | 用途 |
 | --- | --- |
-| `DATABASE_URL` | 应用 PostgreSQL URL，生产使用项目专户；密码含特殊字符时按 URL 百分号编码 |
-| `APP_ORIGIN` | 浏览器访问的准确 origin，不带末尾 `/`；本地 Vite 为 `http://127.0.0.1:5173`，直跑构建为 `http://127.0.0.1:18771` |
-| `HOST` / `PORT` | 后端监听，默认 `127.0.0.1` / `18771`；不要把开发服务器暴露公网 |
-| `STATE_DIR` | 主密钥和首次凭证目录，相对路径以启动目录为准，本地 `./state`、容器 `/app/state` |
-| `MASTER_KEY` | 可选 64 位十六进制密钥；不设时生成并持久化 `STATE_DIR/master.key`，不能随意更换 |
-| `UPSTREAM_ALLOW_HOSTS` | 逗号分隔的精确主机/IP，默认空；仅用于显式授权私网来源，不能用通配符放开整个网络 |
-| `PG_LOCAL_USER` / `PG_LOCAL_PASSWORD` / `PG_LOCAL_PORT` | 仅 `compose.dev.yaml` 使用，本地 PG 默认回环端口 15432；与 URL 中凭据一致 |
-| `TEST_DATABASE_URL` | 专用 `_test` 库 URL；禁止与应用库混用 |
-| `TEST_DATABASE_RESET` | `1` 表示允许重置上述专用测试库，绝非生产迁移开关 |
-| `EVIDENCE_DIR` | 可选测试证据目录，默认 `artifacts/verification` |
-| `BROWSER_EXECUTABLE_PATH` | 可选 Chrome/Chromium 完整可执行路径；未设用 Playwright Chromium |
-| `BROWSER_NO_SANDBOX` | 受控 Linux 容器环境确有需要才设 `1` |
-| `DATABASE_NETWORK` | 仅新部署 compose 模板使用，已有数据库的 Docker 外部网络名 |
+| `APP_ORIGIN` | 浏览器实际访问地址，不带末尾 `/`；开发为 `http://127.0.0.1:5173`，构建后直连为 `http://127.0.0.1:18771` |
+| `HOST` / `PORT` | 后端监听地址和端口，默认 `127.0.0.1` / `18771` |
+| `STATE_DIR` | 保存主密钥和首次凭据；本地 `./state`，容器 `/app/state` |
+| `MASTER_KEY` | 高级可选项，64 位十六进制；默认自动生成并保存，不可随意更换 |
+| `UPSTREAM_ALLOW_HOSTS` | 高级可选项，私网上游精确主机/IP 白名单，英文逗号分隔，默认空 |
+| `DATABASE_NETWORK` | 仅容器部署使用，已有数据库的 Docker 外部网络名 |
 
-Redis 未被应用使用，不需要 Redis 密码。
+## 测试配置（普通运行不需要）
+
+| 变量 | 用途 |
+| --- | --- |
+| `TEST_DB_NAME` | 独立测试库名，必须以 `_test` 结尾；复用上述连接信息，留空则跳过数据库集成测试 |
+| `TEST_DATABASE_RESET` | `1` 允许清空专用测试库，示例默认 `0`；测试前明确开启 |
+| `EVIDENCE_DIR` | 测试证据目录，默认 `artifacts/verification` |
+| `BROWSER_EXECUTABLE_PATH` | 可选 Chrome/Chromium 可执行文件路径 |
+| `BROWSER_NO_SANDBOX` | 受控 Linux 容器确有需要时设 `1`，普通桌面无需设置 |
+
+旧配置升级：将原连接地址中的主机、端口、库名、用户名、密码分别填入五个字段；原测试连接地址只保留库名至 `TEST_DB_NAME`。删除旧连接地址与重复的 `PG_LOCAL_*` 字段。进程环境变量优先于 `.env`。
 
 ## 题库源配置
 

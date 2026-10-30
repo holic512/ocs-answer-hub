@@ -1,8 +1,9 @@
+import {databaseUrl} from '../server/config.js';
 import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {buildApp,ocsConfig} from '../server/app.js';import {createPool} from '../server/db.js';import {prepare} from '../server/search.js';
 import os from 'node:os';import path from 'node:path';import {assertTestDatabaseUrl} from './support/test-database.js';
-const configuredTestUrl=process.env.TEST_DATABASE_URL;
+const configuredTestUrl=databaseUrl(process.env,true);
 test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart',{skip:!configuredTestUrl,timeout:120000},async(t)=>{
- const url=assertTestDatabaseUrl(configuredTestUrl,process.env.DATABASE_URL,process.env.TEST_DATABASE_RESET);
+ const url=assertTestDatabaseUrl(configuredTestUrl,databaseUrl(),process.env.TEST_DATABASE_RESET);
  const pool=createPool(url);t.after(()=>pool.end());
  const state=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-integration-'));t.after(()=>fs.rm(state,{recursive:true,force:true}));
  // This isolated database was created exclusively for automated acceptance.

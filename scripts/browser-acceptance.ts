@@ -1,6 +1,7 @@
+import {databaseUrl as configuredDatabaseUrl} from '../server/config.js';
 import {chromium} from 'playwright';import fs from 'node:fs/promises';import assert from 'node:assert/strict';import {buildApp} from '../server/app.js';import {hashPassword,encrypt} from '../server/security.js';
 import os from 'node:os';import path from 'node:path';import {fileURLToPath} from 'node:url';import {createPool} from '../server/db.js';import {assertTestDatabaseUrl} from '../tests/support/test-database.js';
-const databaseUrl=assertTestDatabaseUrl(process.env.TEST_DATABASE_URL,process.env.DATABASE_URL,process.env.TEST_DATABASE_RESET);
+const databaseUrl=assertTestDatabaseUrl(configuredDatabaseUrl(process.env,true),configuredDatabaseUrl(),process.env.TEST_DATABASE_RESET);
 const evidence=path.resolve(process.env.EVIDENCE_DIR??'artifacts/verification');await fs.mkdir(evidence,{recursive:true,mode:0o700});
 const stateDir=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-browser-'));const origin='http://127.0.0.1:18772';
 const reset=createPool(databaseUrl);try{await reset.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS pg_trgm');}finally{await reset.end();}

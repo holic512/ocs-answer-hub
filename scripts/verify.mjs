@@ -2,8 +2,8 @@ import {spawnSync} from 'node:child_process';
 import {mkdirSync,writeFileSync,readdirSync,readFileSync,statSync,existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import path from 'node:path';
-if(!process.env.TEST_DATABASE_URL||process.env.TEST_DATABASE_RESET!=='1'){
- console.error('Full verification requires a dedicated TEST_DATABASE_URL and TEST_DATABASE_RESET=1. Run npm run setup:local && npm run db:up first.');process.exit(1);
+if(!process.env.TEST_DB_NAME||process.env.TEST_DATABASE_RESET!=='1'){
+ console.error('完整验证需要专用 TEST_DB_NAME 和 TEST_DATABASE_RESET=1，请先运行 npm run setup:local 和 npm run db:up。');process.exit(1);
 }
 const evidence=path.resolve(process.env.EVIDENCE_DIR??'artifacts/verification');
 mkdirSync(evidence,{recursive:true,mode:0o700});

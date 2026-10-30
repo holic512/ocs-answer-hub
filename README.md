@@ -2,7 +2,7 @@
 
 兼容 OCS 的单用户个人题库：**本地固定优先 → 按自定义顺序查询第三方 / AI → 有效答案自动入库**。
 
-技术栈：Node.js 24、TypeScript、Fastify、React/Vite、PostgreSQL 17（pg_trgm）。**不依赖 Redis 或其他中间件**。
+技术栈：Node.js 24、TypeScript、Fastify、React/Vite、PostgreSQL 17（pg_trgm）。**仅需 PostgreSQL，无需其他中间件**。
 
 ## 本地开发
 
@@ -35,13 +35,13 @@ npm run dev:web
 ## 验证与构建
 
 ```sh
-npm test                # 未配置测试库时，仅跳过 PostgreSQL 集成套件
+npm test                # 未配置测试库时，仅跳过 PostgreSQL 集成套件；配置后须开启 TEST_DATABASE_RESET=1
 npm run verify          # 要求独立测试库及显式重置同意；测试 + 类型 + 构建 + 依赖审计
 npx playwright install chromium
 npm run test:browser    # 重置独立测试库后运行浏览器验收，不访问真实供应商
 ```
 
-**集成测试和浏览器验收会清空 `TEST_DATABASE_URL` 指定的 `_test` 库 public schema。** 二者不要并发运行；校验要求 `TEST_DATABASE_RESET=1` 且不能与开发库同名。证据保存到忽略的 `artifacts/verification/`。
+**集成测试和浏览器验收会清空 `TEST_DB_NAME` 指定的 `_test` 库 public schema。** 二者不要并发运行；校验要求 `TEST_DATABASE_RESET=1` 且不能与开发库同名。证据保存到忽略的 `artifacts/verification/`。
 
 单进程本地运行构建产物：把 `.env` 的 `APP_ORIGIN` 改为 `http://127.0.0.1:18771`，然后 `npm run build && npm start`。生产部署请使用 HTTPS。
 

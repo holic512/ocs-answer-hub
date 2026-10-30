@@ -4,7 +4,7 @@
 
 1. 安装 Node.js 24（可使用 `.nvmrc`）和 Docker Desktop / Docker Compose。
 2. `npm ci && npm run setup:local`，自动生成随机数据库密码及被忽略的 `.env`。
-3. `npm run db:up`，首次初始化两个全新数据库。只使用本项目独立 Docker volume。
+3. `npm run db:up`，首次初始化应用数据库和默认的 `ocs_answer_hub_test` 测试库；自定义测试库名需自行建库。只使用本项目独立 Docker volume。
 4. 终端一 `npm run dev`，终端二 `npm run dev:web`；打开 http://127.0.0.1:5173。
 5. 用 `state/bootstrap-admin.json` 登录并改密。管理员登录密码与数据库密码、API token、加密主密钥是不同的东西。
 
@@ -14,16 +14,18 @@ Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。
 
 ## 不使用 Docker
 
-手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 和 `ocs_answer_hub_test` 两个**仅本地开发**的数据库，授权开发角色在各自 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。编辑 `.env` 的数据库 URL。应用启动自动执行幂等建表。
+手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 和 `ocs_answer_hub_test` 两个**仅本地开发**的数据库，授权开发角色在各自 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行幂等建表。
 
 `compose.dev.yaml` 使用的 PostgreSQL超级用户仅适用于回环地址上的隔离开发，不能直接照搬生产；生产必须使用独立低权限角色。
 
 ## 测试安全
 
-- `npm test`：单元与网络夹具；如果没有 `TEST_DATABASE_URL`，数据库套件明确 skipped。
-- `npm run verify`：必须有 `TEST_DATABASE_URL` 和 `TEST_DATABASE_RESET=1`；依次测试、类型检查、构建、生产依赖审计。
+新示例默认 `TEST_DATABASE_RESET=0`。运行数据库集成测试前，确认专用测试库可清空，再将此项改为 `1`；仅运行非数据库测试时，将 `TEST_DB_NAME` 留空。
+
+- `npm test`：单元与网络夹具；如果没有 `TEST_DB_NAME`，数据库套件明确 skipped。
+- `npm run verify`：必须有 `TEST_DB_NAME` 和 `TEST_DATABASE_RESET=1`；依次测试、类型检查、构建、生产依赖审计。
 - `npm run test:browser`：先构建并安装 Chromium；自身创建浏览器夹具，不依赖先跑集成测试。
-- 测试库名必须以 `_test` 结尾且与 `DATABASE_URL` 数据库名不同；仍需自己确认它是专用库。测试会 `DROP SCHEMA public CASCADE`，**绝不能连接线上或承载其他业务的数据**。
+- 测试库名必须以 `_test` 结尾且与 `DB_NAME`不同；仍需自己确认它是专用库。测试会 `DROP SCHEMA public CASCADE`，**绝不能连接线上或承载其他业务的数据**。
 - 数据库集成测试与浏览器验收不能同时运行，它们会重置同一个专用测试库。
 - Chrome 已安装时可设置 `BROWSER_EXECUTABLE_PATH`；受控容器必须关闭 sandbox 时显式设 `BROWSER_NO_SANDBOX=1`，普通桌面不需要。
 - 测试只使用合成题目和本地/注入式上游，不调用实际第三方或 AI；通过不代表真实供应商已通过。

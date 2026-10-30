@@ -1,10 +1,10 @@
 export function assertTestDatabaseUrl(value:string|undefined,applicationUrl:string|undefined,resetConsent:string|undefined):string{
- if(!value)throw new Error('TEST_DATABASE_URL is required');
- if(resetConsent!=='1')throw new Error('TEST_DATABASE_RESET=1 is required before resetting isolated test data');
+ if(!value)throw new Error('请填写 TEST_DB_NAME（专用测试数据库名）');
+ if(resetConsent!=='1')throw new Error('重置专用测试库前必须设置 TEST_DATABASE_RESET=1');
  const url=new URL(value);
- if(!['postgres:','postgresql:'].includes(url.protocol))throw new Error('A PostgreSQL test URL is required');
+ if(!['postgres:','postgresql:'].includes(url.protocol))throw new Error('测试连接必须使用 PostgreSQL 协议');
  const database=decodeURIComponent(url.pathname.slice(1));
- if(!/^[a-zA-Z0-9_]+_test$/.test(database))throw new Error('The dedicated test database name must end in _test');
- if(applicationUrl){const application=new URL(applicationUrl);if(decodeURIComponent(application.pathname)===decodeURIComponent(url.pathname))throw new Error('TEST_DATABASE_URL must not name the DATABASE_URL application database');}
+ if(!/^[a-zA-Z0-9_]+_test$/.test(database))throw new Error('专用测试数据库名必须以 _test 结尾');
+ if(applicationUrl){const application=new URL(applicationUrl);if(decodeURIComponent(application.pathname)===decodeURIComponent(url.pathname))throw new Error('TEST_DB_NAME 不能与 DB_NAME 相同');}
  return value;
 }
