@@ -3,7 +3,7 @@
  * @project ocs-answer-hub
  * @module 凭据与上游传输
  * @description 密码哈希、配置加密脱敏及 HTTP/HTTPS 上游请求。
- * @logic 保护已存凭据；解析并固定目标地址，请求不区分公网和私网，保留超时及响应诊断。
+ * @logic 保护已存凭据；解析并固定目标地址，请求不区分公网和私网，复用有界连接池并保留超时及响应诊断。
  * @dependencies node:crypto, node:dns/promises, undici
  * @index_tags credentials, encryption, upstream
  * @author holic512
@@ -26,6 +26,13 @@ export function validateUrl(raw:string){const u=new URL(raw);if(u.username||u.pa
 export type NetworkEvent={stage:'dns'|'connect'|'http'|'json';status:'passed'|'failed';message:string;httpStatus?:number;durationMs:number};
 export class UpstreamError extends Error{constructor(public code:string,message:string,public httpStatus?:number){super(message);this.name='UpstreamError';}}
 export async function safeRequest(raw:string,method:string,headers:Record<string,string>,body:any,timeout:number,observe?:(event:NetworkEvent)=>void):Promise<any>{
+ return performRequest(raw,method,headers,body,timeout,observe);
+}
+export function createUpstreamTransport(){
+ const agents=new Map<string,Agent>();
+ return {request:((raw:string,method:string,headers:Record<string,string>,body:any,timeout:number,observe?:((event:NetworkEvent)=>void))=>performRequest(raw,method,headers,body,timeout,observe,agents)),close:async()=>{await Promise.all([...agents.values()].map(agent=>agent.destroy()));agents.clear();}};
+}
+async function performRequest(raw:string,method:string,headers:Record<string,string>,body:any,timeout:number,observe?:((event:NetworkEvent)=>void),agents?:Map<string,Agent>):Promise<any>{
  const started=Date.now(),deadline=started+timeout;const emit=(stage:NetworkEvent['stage'],status:NetworkEvent['status'],message:string,httpStatus?:number)=>observe?.({stage,status,message,durationMs:Date.now()-started,...(httpStatus?{httpStatus}:{})});
  let u:URL;try{u=validateUrl(raw);}catch{throw new UpstreamError('UPSTREAM_ADDRESS','上游地址格式无效或协议不受支持');}
  const host=u.hostname.replace(/^\[|\]$/g,'');let addresses:Array<{address:string;family:number}>;let timer:ReturnType<typeof setTimeout>|undefined;
@@ -33,7 +40,11 @@ export async function safeRequest(raw:string,method:string,headers:Record<string
  catch(e:any){emit('dns','failed',e.code==='UPSTREAM_TIMEOUT'?'DNS解析超时':'DNS解析失败');throw new UpstreamError(e.code==='UPSTREAM_TIMEOUT'?'UPSTREAM_TIMEOUT':'UPSTREAM_DNS','DNS解析失败或超时');}finally{if(timer)clearTimeout(timer);}
  if(!addresses.length){emit('dns','failed','DNS未返回可用地址');throw new UpstreamError('UPSTREAM_DNS','DNS未返回可用地址');}
  emit('dns','passed','DNS解析通过，连接地址已固定');const remaining=Math.max(1,deadline-Date.now());
- const target=addresses[0];const agent=new Agent({connect:{lookup:((_h:any,opts:any,cb:any)=>opts?.all?cb(null,[target]):cb(null,target.address,target.family)) as any,timeout:Math.min(remaining,10000)}});
+ const target=addresses[0];const agentKey=JSON.stringify([u.origin,target.address,target.family]);
+ let agent=agents?.get(agentKey);
+ if(!agent){agent=new Agent({connections:4,keepAliveTimeout:10000,keepAliveMaxTimeout:10000,connect:{lookup:((_h:any,opts:any,cb:any)=>opts?.all?cb(null,[target]):cb(null,target.address,target.family)) as any,timeout:10000}});
+  if(agents){if(agents.size>=32){const oldest=agents.keys().next().value!;const retired=agents.get(oldest)!;agents.delete(oldest);void retired.close().catch(()=>{});}agents.set(agentKey,agent);}
+ }else{agents!.delete(agentKey);agents!.set(agentKey,agent);}
  let connected=false;
  try{const response=await request(u,{method:method as any,headers:{...headers,'accept':'application/json'},...(method==='GET'?{}:{body:JSON.stringify(body)}),dispatcher:agent,signal:AbortSignal.timeout(remaining),headersTimeout:remaining,bodyTimeout:remaining});
  connected=true;emit('connect','passed',u.protocol==='https:'?'TCP连接与TLS证书验证通过':'HTTP连接成功（明文传输）');
@@ -42,5 +53,5 @@ export async function safeRequest(raw:string,method:string,headers:Record<string
  let size=0;const chunks:Buffer[]=[];for await(const chunk of response.body){size+=chunk.length;if(size>1024*1024){response.body.destroy();emit('json','failed','响应超过1MB限制');throw new UpstreamError('UPSTREAM_SIZE','上游返回超过1MB');}chunks.push(Buffer.from(chunk));}
  let result:any;try{result=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{emit('json','failed','响应不是有效的JSON');throw new UpstreamError('UPSTREAM_JSON','响应不是有效的JSON');}emit('json','passed','JSON响应解析通过');return result;
  }catch(e:any){if(e instanceof UpstreamError)throw e;const code=String(e.code??e.cause?.code??'');if(!connected)emit('connect','failed','连接失败、证书错误或超时');throw new UpstreamError(/TIMEOUT|ABORT/i.test(code)||e.name==='TimeoutError'?'UPSTREAM_TIMEOUT':/CERT|TLS|SSL/i.test(code)?'UPSTREAM_TLS':'UPSTREAM_NETWORK','上游连接失败、超时或响应中断');}
- finally{await agent.destroy();}
+ finally{if(!agents)await agent.destroy();}
 }
