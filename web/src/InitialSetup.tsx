@@ -2,7 +2,7 @@
  * @file InitialSetup.tsx
  * @project ocs-answer-hub
  * @module 首次初始化
- * @description 数据库没有管理员时优先展示账号设置，完成后进入登录页。
+ * @description 在认证布局中展示首次账号设置，完成后进入登录页。
  * @logic 用户设置账号和密码、确认密码、提交一次性初始化、处理已有账号状态。
  * @dependencies React, components/ui, /api/setup
  * @index_tags setup, admin, onboarding
@@ -25,10 +25,8 @@ export default function InitialSetup({api,onComplete}:Props){
   catch(error:any){if(error.status===409)await onComplete();else setError(error.message);}
   finally{setPending(false);}
  }
- return <div className="login-page">
-  <div className="login-brand"><div className="brand-symbol">知</div><h1>先创建账号，<br/>再开始使用。</h1><p>为你的个人题库创建管理账号。<br/>初始化完成后，即可登录使用。</p></div>
-  <section className="login-card" aria-labelledby="setup-title">
-   <h2 id="setup-title">初始化管理员</h2>
+ return <section aria-labelledby="setup-title">
+   <h1 id="setup-title">初始化管理员</h1>
    <p className="muted">当前数据库尚无管理员，请设置账号和密码。</p>
    <form onSubmit={submit}>
     <label className="field"><span>管理员账号</span><Input name="username" autoComplete="username" maxLength={100} placeholder="设置管理员账号" required autoFocus disabled={pending}/></label>
@@ -38,6 +36,5 @@ export default function InitialSetup({api,onComplete}:Props){
     <Button className="primary full" disabled={pending}>{pending?'正在创建管理员…':'创建管理员并进入登录'}</Button>
    </form>
    <p className="secure-note">仅首次使用需要设置，已有管理员后将关闭此入口。</p>
-  </section>
- </div>;
+ </section>;
 }

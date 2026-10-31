@@ -1,7 +1,7 @@
 {
   "name": "ocs-answer-hub",
   "private": true,
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "description": "知序：兼容 OCS 的单用户本地优先题库服务",
   "engines": {
@@ -33,6 +33,7 @@
     "prisma": "^7.10.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-router": "^8.5.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
     "undici": "^7.16.0",
