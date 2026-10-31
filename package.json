@@ -1,7 +1,7 @@
 {
   "name": "ocs-answer-hub",
   "private": true,
-  "version": "1.0.20",
+  "version": "1.1.0",
   "type": "module",
   "description": "知序：兼容 OCS 的多用户本地优先题库服务",
   "engines": {
@@ -50,5 +50,10 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^7.2.2"
+  },
+  "overrides": {
+    "@huggingface/transformers": {
+      "sharp": "0.35.5"
+    }
   }
 }

@@ -59,3 +59,9 @@ RAG 只注入已核验、非生成任务来源的唯一高相似题；生成题�
 新增 sessions(user_id)、api_tokens(user_id)、query_events(user_id,created_at DESC)、任务领取索引、预览索引和 HNSW 索引；原题干和查询日期索引保留。水平扩展时共享 PostgreSQL 与同一 master.key，私密配置、模型文件统一部署；不缓存答案状态，因此跨实例纠错立即可见。任务和额度无需粘性会话。每实例 12 连接和每来源 4 并发会随副本数相乘，先按数据库连接预算/上游合同限制副本数量；后续可独立部署 worker、采用 PgBouncer transaction pooling（验证 Prisma/迁移专用直连）和数据库全局来源槽位。未引入未经验证的消息队列。
 
 自动测试覆盖 20 路混合 HTTP 额度、20 路 RPM、token 扣额回滚、权限隔离、密码/禁用、跨实例答案一致性、20 个不同题来源并发上限、模型本地推理、阈值/RAG、迁移字段保留、生成过滤和租约恢复。测试结果与实际环境限制见交付报告；单次开发机压测不等同长期 SLA。
+
+## 依赖安全补丁
+
+Transformers 3.8.1 间接依赖的 sharp 固定覆盖至 0.35.5，并同步其原生包和 libvips，修复 [libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) 与 [librsvg](https://github.com/advisories/GHSA-wq5f-xc86-pv6w) 高危公告。升级 Transformers 时应重新评估该 scoped override；Node 24、真实本地推理、原生图像模块加载及多架构镜像需继续通过 CI。
+
+现有 @fastify/static 10.1.8 的 glob/minimatch 依赖链仍有中危公告：[glob 取消后遍历](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)、[minimatch 模式放大](https://github.com/advisories/GHSA-g3hv-75wg-m249)。当前静态服务使用默认 wildcard 路由，未执行该 glob 遍历分支，也未向用户开放 glob 模式输入。修复版本涉及 glob 14、minimatch 11 和 path-scurry 3 的兼容升级，须跟进上游更新并验证后部署；目前不能声称依赖漏洞已全部清零。
