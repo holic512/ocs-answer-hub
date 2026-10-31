@@ -112,7 +112,7 @@ export class SemanticService{
  async rag(q:Prepared,rows?:SemanticCandidate[]):Promise<RagDecision>{try{return buildRag(q,rows??await this.candidates(q));}catch(error){const reason=error instanceof SemanticUnavailableError?'model_unavailable':error instanceof SemanticInputTooLongError?'input_too_long':error instanceof SemanticIndexIncompleteError?'index_incomplete':null;if(reason)return {enabled:false,reason,context:'',items:[]};throw error;}}
  async health(){
   const extension=(await this.pool.query("SELECT extversion FROM pg_extension WHERE extname='vector'")).rows[0]?.extversion??null;
-  const coverage=(await this.pool.query(`SELECT (SELECT count(*)::int FROM questions WHERE NOT deleted) total,(SELECT count(*)::int FROM question_vectors WHERE model=$1) indexed,(SELECT count(*)::int FROM vector_index_skips s JOIN questions q ON q.id=s.question_id WHERE NOT q.deleted) skipped`,[EMBEDDING_MODEL])).rows[0];
+  const coverage=(await this.pool.query(`SELECT (SELECT count(*)::int FROM questions WHERE NOT deleted) total,(SELECT count(*)::int FROM question_vectors v JOIN questions q ON q.id=v.question_id WHERE v.model=$1 AND NOT q.deleted) indexed,(SELECT count(*)::int FROM vector_index_skips s JOIN questions q ON q.id=s.question_id WHERE NOT q.deleted) skipped`,[EMBEDDING_MODEL])).rows[0];
   if(this.localPath&&!this.loader)try{await this.embed('本地模型健康检查');}catch{}
   return {model:EMBEDDING_MODEL,dimension:SEMANTIC_POLICY.dimension,ready:this.ready,reason:this.localPath?this.reason:'model_path_not_configured',extension,coverage};
  }

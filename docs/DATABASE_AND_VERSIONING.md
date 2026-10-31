@@ -11,7 +11,7 @@
 
 `prisma/schema.prisma` 是当前模型；`prisma/migrations` 是不可随意修改的版本历史；`prisma/baseline.prisma` 是旧版固定快照，不随业务模型更新。迁移记录保存在 `_prisma_migrations`，原 `schema_migrations` 作为旧系统记录保留。
 
-Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；题库模糊匹配、统计、事务锁和配额原子更新保留 PostgreSQL 专用 SQL。`pg_trgm` 由数据库管理员安装；可用时初始迁移创建模糊索引，未安装时保持原系统的降级行为。
+Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；题库模糊匹配、统计、事务锁和配额原子更新保留 PostgreSQL 专用 SQL。初始版本的 pg_trgm 为可选扩展；多用户/向量版本要求准备 vector 与 pg_trgm，具体步骤见 [兼容升级](MULTIUSER_UPGRADE.md)。扩展缺失时新迁移事务回滚并停止启动。
 
 ## 开发新表结构
 
@@ -21,11 +21,11 @@ Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；�
 4. 运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy` 应用待执行迁移，再运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js generate` 更新客户端。
 5. 一并提交模型和迁移目录。已应用的迁移不再修改，新变更新增迁移。
 
-`pg_trgm` 索引与 CHECK 约束包含手写 SQL，调整相关模型时需同步检查生成迁移。不要使用 `db push` 或 `migrate reset` 更新现有业务数据库。
+`pg_trgm`/HNSW 索引、vector(512) 维度与 CHECK 约束包含手写 SQL，调整相关模型时需同步检查生成迁移。不要使用 `db push` 或 `migrate reset` 更新现有业务数据库。
 
 ## 部署升级
 
-先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、模型与迁移文件；启动会按顺序应用新迁移。也可以在启动前手动运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy`，用 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 查看状态。迁移账号需要相应的建表、改表权限。
+先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、数据库模型定义与迁移文件（不包含 Embedding 权重）；启动会按顺序应用新迁移。也可以在启动前手动运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy`，用 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 查看状态。迁移账号需要相应的建表、改表权限。
 
 迁移版本与应用版本分别记录：应用版本是 `1.0.0` 等版本号，数据库版本是按时间排序的迁移目录。发布包含哪些迁移由该提交内的迁移目录确定；不提供自动降级或自动删除业务数据。
 
