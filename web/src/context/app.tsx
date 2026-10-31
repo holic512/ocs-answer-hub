@@ -2,7 +2,7 @@
  * @file app.tsx
  * @project ocs-answer-hub
  * @module 应用会话
- * @description 管理初始化检查、管理员会话、请求反馈与通知。
+ * @description 管理初始化检查、用户会话、请求反馈与通知。
  * @logic 先检查初始化再恢复会话，向布局及页面提供统一状态和操作。
  * @dependencies React, lib/api
  * @index_tags session, setup, feedback
@@ -10,7 +10,7 @@
  */
 import {createContext,useContext,useState,useEffect,useRef,type ReactNode} from 'react';
 import {api,setCsrf} from '../lib/api';
-type User={username:string;csrf:string;mustChange:boolean};
+type User={id:number;role:'admin'|'user';username:string;csrf:string;mustChange:boolean};
 type AppState={user:User|null;loaded:boolean;setupRequired:boolean|null;error:string;notice:string;busy:boolean;loginName:string;loadUser:()=>Promise<void>;run:(fn:()=>Promise<any>)=>Promise<any>;notify:(message:string)=>void;clearError:()=>void;login:(data:Record<string,FormDataEntryValue>)=>Promise<User>;endSession:()=>void;logout:()=>Promise<void>;completeSetup:(username?:string)=>Promise<void>};
 const AppContext=createContext<AppState>(null!);
 export function AppProvider({children}:{children:ReactNode}){

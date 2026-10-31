@@ -13,15 +13,15 @@ import {Link,NavLink,Outlet,useLocation} from 'react-router';
 import {Button} from '../components/ui/button';
 import {Icon} from '../components/workspace';
 import {useApp} from '../context/app';
-const navigation=[['overview','概览'],['questions','本地题库'],['providers','检索来源'],['query','查题工作台'],['tokens','OCS 接入'],['settings','安全设置']];
+const navigation=[['query','查题工作台'],['overview','概览'],['questions','本地题库'],['providers','检索来源'],['users','用户管理'],['jobs','AI 题库任务'],['tokens','OCS 接入'],['settings','安全设置']];
 export default function AppLayout(){
  const {user,error,notice,clearError,run,logout}=useApp();const location=useLocation();const main=useRef<HTMLElement>(null);
  useEffect(()=>{clearError();main.current?.focus();window.scrollTo(0,0);},[location.pathname]);
  return <div className="app-layout">
   <a className="skip-link" href="#main">跳到主要内容</a>
   <aside className="sidebar">
-   <Link className="brand" to="/overview" aria-label="知序首页"><span className="brand-symbol">知</span><span className="brand-name">知序</span></Link>
-   <nav className="app-nav" aria-label="主导航">{navigation.map(([id,label])=><NavLink key={id} to={`/${id}`} aria-label={label} title={label}><Icon name={id}/><span>{label}</span></NavLink>)}</nav>
+   <Link className="brand" to="/query" aria-label="知序首页"><span className="brand-symbol">知</span><span className="brand-name">知序</span></Link>
+   <nav className="app-nav" aria-label="主导航">{navigation.filter(([id])=>user?.role==='admin'||['query','settings'].includes(id)).map(([id,label])=><NavLink key={id} to={`/${id}`} aria-label={label} title={label}><Icon name={id}/><span>{label}</span></NavLink>)}</nav>
    <div className="sidebar-bottom"><Button className="user-row" aria-label={`退出登录（${user?.username}）`} title="退出登录" onClick={()=>run(logout)}><span className="avatar">{user?.username.slice(0,1).toUpperCase()}</span><span className="user-info">{user?.username}<small>退出登录</small></span><Icon name="logout" size={18}/></Button></div>
   </aside>
   <div className="app-body"><main className="app-main" id="main" ref={main} tabIndex={-1}>
