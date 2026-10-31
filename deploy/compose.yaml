@@ -55,10 +55,11 @@ services:
         target: /app/storage
         bind:
           create_host_path: false
+      # 将下载后的模型放在 storage/models/bge-small-zh-v1.5；仅通过只读路径使用。
     networks:
       - databases
-    mem_limit: 512m
-    cpus: 1.0
+    mem_limit: 2g
+    cpus: 2.0
     pids_limit: 100
     logging:
       driver: json-file

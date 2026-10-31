@@ -73,3 +73,5 @@ node scripts/deployment-acceptance.mjs
 ```
 
 部署验收使用独立临时 PostgreSQL、网络和绑定目录，安装和更新使用本地镜像；结束自动清理本次测试资源，不连接业务数据库。
+
+多用户/pgvector 版本升级前须准备 PostgreSQL vector、pg_trgm 扩展及本地 INT8 模型，参见 [兼容升级说明](../docs/MULTIUSER_UPGRADE.md)。模型可放在 storage/models，并在 config.env 设置 LOCAL_EMBEDDING_PATH；运行镜像已切换 glibc，建议 2 CPU/2GiB。

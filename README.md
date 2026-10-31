@@ -285,3 +285,9 @@ node scripts/clean.mjs
 | [界面规范](DESIGN.md) | 现有组件、间距、圆角和交互约定 |
 
 应用版本取自 `package.json`；每次提交递增补丁号，超过 20 时次版本号加一。仓库当前未提供 LICENSE 文件，使用和分发前请与维护者确认授权。
+
+## 多用户与本地语义检索升级
+
+登录默认进入查题工作台，管理员和普通用户共用数据库原子额度；OCS 凭证按用户归属计次。管理员可管理用户、课程 AI 生成和可恢复向量回填。模型固定为本地 BGE-small-zh-v1.5 signed INT8（512维），不使用远程 Embedding。
+
+升级前备份数据库及 master.key，先准备 pgvector/pg_trgm；新增迁移保留全部旧账号、凭证及题库数据。[完整升级、模型安装、任务和并发说明](docs/MULTIUSER_UPGRADE.md)。

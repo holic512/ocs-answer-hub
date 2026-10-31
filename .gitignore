@@ -54,3 +54,8 @@ Thumbs.db
 # Python 运维脚本缓存
 __pycache__/
 *.py[cod]
+
+# 本地模型权重和安装缓存不提交
+models/
+*.onnx
+*.onnx_data

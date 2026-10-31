@@ -44,7 +44,7 @@ async function healthy(){
 try{
  docker(['image','inspect',image]);
  docker(['network','create',network]);networkCreated=true;
- docker(['run','-d','--rm','--name',postgres,'--network',network,'--network-alias','postgres','-e','POSTGRES_PASSWORD=isolated-deployment-fixture','-e','POSTGRES_DB=answer_hub','postgres:17-alpine']);postgresCreated=true;
+ docker(['run','-d','--rm','--name',postgres,'--network',network,'--network-alias','postgres','-e','POSTGRES_PASSWORD=isolated-deployment-fixture','-e','POSTGRES_DB=answer_hub','pgvector/pgvector:0.8.2-pg17']);postgresCreated=true;
  for(let attempt=0;attempt<40;attempt++){try{docker(['exec',postgres,'pg_isready','-U','postgres']);break;}catch{if(attempt===39)throw new Error('临时 PostgreSQL 未就绪');await new Promise(resolve=>setTimeout(resolve,250));}}
  let firstInstallRejected=false;
  try{operations(['install','--no-pull','--image',image,'--network',network,'--port','0']);}catch{firstInstallRejected=true;}

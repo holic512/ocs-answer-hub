@@ -204,3 +204,5 @@ node scripts/deployment-acceptance.mjs
 ## Python 运维入口
 
 新增 `deploy/deploy.py`，提供 install、start、restart、update、stop、status、logs、check，复用本文部署目录。使用 Python 3.8+ 标准库，无需 pip 依赖。原 Shell 脚本继续兼容；命令和参数见 `deploy/README.md`。镜像内同时保存 `/app/defaults/deploy.py`，供服务器取出使用。
+
+多用户/pgvector 版本升级前须准备 PostgreSQL vector、pg_trgm 扩展及本地 INT8 模型，参见 [兼容升级说明](../docs/MULTIUSER_UPGRADE.md)。模型可放在 storage/models，并在 config.env 设置 LOCAL_EMBEDDING_PATH；运行镜像已切换 glibc，建议 2 CPU/2GiB。
