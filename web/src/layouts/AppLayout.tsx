@@ -4,7 +4,7 @@
  * @module 后台布局
  * @description 后台公共导航、主内容出口、账号操作与版本。
  * @logic 路由决定导航选中态，业务页面渲染到唯一主内容区域。
- * @dependencies react-router, state/app, components/ui
+ * @dependencies react-router, context/app, components/ui
  * @index_tags layout, navigation
  * @author holic512
  */
@@ -12,7 +12,7 @@ import {useEffect,useRef} from 'react';
 import {Link,NavLink,Outlet,useLocation} from 'react-router';
 import {Button} from '../components/ui/button';
 import {Icon} from '../components/workspace';
-import {useApp} from '../state/app';
+import {useApp} from '../context/app';
 const navigation=[['overview','概览'],['questions','本地题库'],['providers','检索来源'],['query','查题工作台'],['tokens','OCS 接入'],['settings','安全设置']];
 export default function AppLayout(){
  const {user,error,notice,clearError,run,logout}=useApp();const location=useLocation();const main=useRef<HTMLElement>(null);

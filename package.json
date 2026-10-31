@@ -1,7 +1,7 @@
 {
   "name": "ocs-answer-hub",
   "private": true,
-  "version": "1.0.14",
+  "version": "1.0.15",
   "type": "module",
   "description": "知序：兼容 OCS 的单用户本地优先题库服务",
   "engines": {

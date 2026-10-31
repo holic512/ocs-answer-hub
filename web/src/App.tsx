@@ -4,7 +4,7 @@
  * @module 应用路由
  * @description 初始化与会话守卫、认证布局和后台页面路由。
  * @logic 初始化优先，登录后恢复目标页，旧账号强制改密，未知路径展示返回入口。
- * @dependencies React, react-router, state/app, layouts, pages
+ * @dependencies React, react-router, context/app, layouts, pages
  * @index_tags router, guards, app
  * @author holic512
  */
@@ -12,7 +12,7 @@ import {useEffect} from 'react';
 import {Navigate,Outlet,Route,Routes,useLocation} from 'react-router';
 import {Button} from './components/ui/button';
 import {api} from './lib/api';
-import {useApp} from './state/app';
+import {useApp} from './context/app';
 import AppLayout from './layouts/AppLayout';
 import AuthLayout from './layouts/AuthLayout';
 import InitialSetup from './InitialSetup';
