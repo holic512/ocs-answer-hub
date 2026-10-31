@@ -7,13 +7,23 @@ datasource db {
 }
 
 model administrators {
-  id            Int      @id
+  id            Int      @id @default(autoincrement())
+  role String @default("user")
+  disabled Boolean @default(false)
+  daily_limit Int @default(2000)
+  rpm Int @default(60)
+  usage_day DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  day_count Int @default(0)
+  minute_bucket DateTime @default(dbgenerated("date_trunc('minute'::text, now())")) @db.Timestamptz(6)
+  minute_count Int @default(0)
   username      String   @unique
   password_hash String
   must_change   Boolean  @default(true)
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 }
 model sessions {
+  user_id Int @default(1)
+  @@index([user_id], map: "sessions_user_idx")
   hash       String   @id
   csrf       String
   expires_at DateTime @db.Timestamptz(6)
@@ -30,6 +40,8 @@ model providers {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 }
 model api_tokens {
+  user_id Int @default(1)
+  @@index([user_id], map: "tokens_user_idx")
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name          String
   hash          String    @unique
@@ -46,6 +58,10 @@ model api_tokens {
   created_at    DateTime  @default(now()) @db.Timestamptz(6)
 }
 model questions {
+  generation_task_id String? @db.Uuid
+  generation_round Int?
+  generation_model String?
+  @@index([generation_task_id], map: "questions_generation_idx")
   id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   fingerprint   String   @unique
   title         String
@@ -77,6 +93,8 @@ model answer_versions {
   question    questions @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 model query_events {
+  user_id Int?
+  @@index([user_id,created_at(sort: Desc)], map: "events_user_date_idx")
   id          BigInt   @id @default(autoincrement())
   token_id    String?  @db.Uuid
   title       String
@@ -106,4 +124,57 @@ model settings {
 model schema_migrations {
   version    String   @id
   applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+// 后台任务由 PostgreSQL 租约调度，SQL 外键与 CHECK 见增量迁移。
+model background_jobs {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ kind String
+ user_id Int
+ provider_id String? @db.Uuid
+ course String @default("")
+ status String @default("queued")
+ max_rounds Int @default(1)
+ max_questions Int @default(10)
+ batch_size Int @default(10)
+ round Int @default(0)
+ accepted Int @default(0)
+ attempts Int @default(0)
+ max_attempts Int @default(3)
+ cancel_requested Boolean @default(false)
+ lease_until DateTime? @db.Timestamptz(6)
+ lease_token String? @db.Uuid
+ cursor_id String? @db.Uuid
+ processed Int @default(0)
+ skipped_count Int @default(0)
+ error String?
+ created_at DateTime @default(now()) @db.Timestamptz(6)
+ updated_at DateTime @default(now()) @db.Timestamptz(6)
+ @@index([status,lease_until,created_at], map: "jobs_claim_idx")
+}
+model question_vectors {
+ question_id String @id @db.Uuid
+ embedding Unsupported("vector(512)")
+ content_hash String
+ model String
+ updated_at DateTime @default(now()) @db.Timestamptz(6)
+ // HNSW vector_cosine_ops 由 SQL 迁移维护，Prisma 不支持该索引类型。
+}
+model generation_previews {
+ id BigInt @id @default(autoincrement())
+ job_id String @db.Uuid
+ round Int
+ question_id String? @db.Uuid
+ data Json
+ status String
+ reason String?
+ created_at DateTime @default(now()) @db.Timestamptz(6)
+ @@index([job_id,id], map: "generation_previews_job_idx")
+}
+model vector_index_skips {
+ question_id String @id @db.Uuid
+ content_hash String
+ model String
+ reason String
+ updated_at DateTime @default(now()) @db.Timestamptz(6)
 }

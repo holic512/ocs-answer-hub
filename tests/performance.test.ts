@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {setTimeout as delay} from 'node:timers/promises';
 import {buildApp} from '../server/app.js';
+import {Engine} from '../server/engine.js';
 import {prepare} from '../server/search.js';
 import {encrypt} from '../server/security.js';
 import {ConcurrencyPool} from '../server/concurrency.js';
@@ -30,11 +31,11 @@ test('real database cache invalidation, accounting and bounded upstream concurre
   await app.ready();await app.inject({method:'POST',url:'/api/setup',headers:{origin:'http://localhost'},payload:{username:'cache-owner',password:'cache888',confirmPassword:'cache888'}});
   const login=await app.inject({method:'POST',url:'/api/login',headers:{origin:'http://localhost'},payload:{username:'cache-owner',password:'cache888'}});
   const headers={origin:'http://localhost',cookie:login.headers['set-cookie']!.toString().split(';')[0],'x-csrf-token':login.json().csrf};
-  await t.test('hot answers skip reads, retain hit counts, expire and observe corrections, conflicts, imports and deletions',async(t)=>{
+  await t.test('database reads retain hit counts and observe corrections, conflicts, imports and deletions',async(t)=>{
    const q=prepare({title:'缓存测试题',type:'judgement'});const stored=await engine.store(q,'正确','fixture',true);
    let reads=0;const query=pool.query.bind(pool);const spy=t.mock.method(pool,'query',((...args:any[])=>{if(typeof args[0]==='string'&&args[0].startsWith('SELECT * FROM questions'))reads++;return (query as any)(...args);}) as typeof pool.query);
    assert.equal((await engine.local(q))?.answer,'正确');const coldReads=reads;
-   assert.equal((await engine.local(q))?.answer,'正确');assert.equal(reads,coldReads);
+   assert.equal((await engine.local(q))?.answer,'正确');assert.equal(reads,coldReads+1);
    assert.equal(Number((await pool.query('SELECT hit_count FROM questions WHERE id=$1',[stored.id])).rows[0].hit_count),2);
    const now=Date.now();const clock=t.mock.method(Date,'now',()=>now+31000);
    assert.equal((await engine.local(q))?.answer,'正确');assert(reads>coldReads);clock.mock.restore();
@@ -48,14 +49,11 @@ test('real database cache invalidation, accounting and bounded upstream concurre
    await engine.store(original,'正确','fixture',true);assert.equal((await engine.local(similar))?.match,'fuzzy');
    await engine.store(similar,'错误','fixture',true);assert.equal((await engine.local(similar))?.answer,'错误');assert.equal((await engine.local(similar))?.match,'exact');
   });
-  await t.test('cache entries expire in least recently used order at the capacity bound',async(t)=>{
-   const inputs=Array.from({length:257},(_,index)=>prepare({title:`容量题${index}`,type:'judgement'}));
-   await pool.query("INSERT INTO questions(fingerprint,title,normal_title,type,options,images,answer,source,verified) SELECT key,title,title,'judgement','[]','[]','正确','fixture',true FROM jsonb_to_recordset($1::jsonb) AS x(key text,title text)",[JSON.stringify(inputs.map(({key,title})=>({key,title})))]);
-   const query=pool.query.bind(pool);let reads=0;const spy=t.mock.method(pool,'query',((...args:any[])=>{if(typeof args[0]==='string'&&args[0].startsWith('SELECT * FROM questions'))reads++;return (query as any)(...args);}) as typeof pool.query);
-   for(const q of inputs.slice(0,256))assert(await engine.local(q));
-   assert(await engine.local(inputs[0]));assert(await engine.local(inputs[256]));const before=reads;
-   assert(await engine.local(inputs[0]));assert.equal(reads,before);
-   assert(await engine.local(inputs[1]));assert.equal(reads,before+1);spy.mock.restore();
+  await t.test('independent service instances see corrections and deletions immediately',async()=>{
+   const peer=new Engine(pool,engine.key);const q=prepare({title:'跨实例一致性题',type:'judgement'});
+   const row=await engine.store(q,'正确','人工维护',true);assert.equal((await peer.local(q))?.answer,'正确');
+   await engine.store(q,'错误','人工纠错',true);assert.equal((await peer.local(q))?.answer,'错误');
+   await pool.query('UPDATE questions SET deleted=true WHERE id=$1',[row.id]);assert.equal(await peer.local(q),null);
   });
   await pool.query('INSERT INTO providers(name,kind,enabled,priority,timeout_ms,config_cipher) VALUES($1,$2,true,1,1000,$3)',['并发来源','http',encrypt({url:'http://fixture.local/query',answerPath:'answer'},engine.key)]);
   await t.test('20 different questions run with at most four requests per source, one event per caller',async()=>{

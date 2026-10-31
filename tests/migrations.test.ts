@@ -1,44 +1,20 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import {execFile} from 'node:child_process';
-import {promisify} from 'node:util';
-const execute=promisify(execFile);
-import {createPool,createOrm,migrate} from '../server/db.js';
-import {createTestDatabase} from './support/test-database.js';
-test('Prisma initializes, repeats safely, adopts legacy schema and preserves data',{timeout:120000},async()=>{
- const database=await createTestDatabase();const url=database.url;
- const pool=createPool(url);
+import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';
+import {createPool,migrate} from '../server/db.js';import {createTestDatabase} from './support/test-database.js';
+test('fresh migrations repeat safely; legacy upgrade preserves every original table and credential',{timeout:120000},async()=>{
+ const database=await createTestDatabase();const p=createPool(database.url);
  try{
-  await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
-  await migrate(pool);await migrate(pool);
-  const orm=createOrm(pool);
-  const row=await orm.providers.create({data:{name:'迁移保留夹具',kind:'http',priority:1,config_cipher:'fixture'}});
-  assert.equal((await orm.providers.findUniqueOrThrow({where:{id:row.id}})).name,'迁移保留夹具');await orm.$disconnect();
-  assert.equal(Number((await pool.query('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].count),1);
-  // 模拟原系统数据库：原迁移标记和表保留，尚未接入 Prisma。
-  await pool.query('DROP TABLE _prisma_migrations');
-  await pool.query('CREATE INDEX IF NOT EXISTS question_trgm_idx ON questions USING gin(normal_title gin_trgm_ops)');
-  await migrate(pool);await migrate(pool);
-  assert.equal((await pool.query('SELECT name FROM providers WHERE id=$1',[row.id])).rows[0].name,'迁移保留夹具');
-  assert.equal(Number((await pool.query('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].count),1);
-  await pool.query('DROP TABLE _prisma_migrations; DROP INDEX question_trgm_idx; DROP EXTENSION pg_trgm');
-  await migrate(pool);
-  // 在独立临时迁移目录中模拟下一版本，避免改动仓库迁移历史。
-  const fixture=await fs.mkdtemp(path.join(os.tmpdir(),'hub-migration-'));
-  try{
-   await fs.cp('prisma',path.join(fixture,'prisma'),{recursive:true});
-   await fs.symlink(path.resolve('node_modules'),path.join(fixture,'node_modules'),'dir');
-   await fs.mkdir(path.join(fixture,'prisma/migrations/20261030000001_fixture'));
-   await fs.writeFile(path.join(fixture,'prisma/migrations/20261030000001_fixture/migration.sql'),'ALTER TABLE settings ADD COLUMN migration_fixture text;');
-   await fs.writeFile(path.join(fixture,'prisma.config.ts'),`import {defineConfig} from 'prisma/config';export default defineConfig({schema:'prisma/schema.prisma',migrations:{path:'prisma/migrations'},datasource:{url:process.env.PRISMA_DATABASE_URL}});`);
-   const deploy=()=>execute(process.execPath,[path.resolve('node_modules/prisma/build/index.js'),'migrate','deploy'],{cwd:fixture,env:{...process.env,PRISMA_DATABASE_URL:url}});
-   await deploy();await deploy();
-   assert.equal(Number((await pool.query('SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].count),2);
-   await pool.query('SELECT migration_fixture FROM settings');
-   assert.equal((await pool.query('SELECT name FROM providers WHERE id=$1',[row.id])).rows[0].name,'迁移保留夹具');
-  }finally{await fs.rm(fixture,{recursive:true,force:true});}
- }finally{await pool.end();await database.close();}
+  // Only this disposable database receives the original published schema fixture.
+  await p.query(await fs.readFile('prisma/migrations/20261030000000_initial/migration.sql','utf8'));
+  await p.query("INSERT INTO administrators VALUES(1,'legacy','original-hash',false,now()); INSERT INTO sessions(hash,csrf,expires_at) VALUES('old-session','old-csrf',now()+interval '1 day'); INSERT INTO providers(name,kind,priority,config_cipher) VALUES('source','ai',1,'old-cipher'); INSERT INTO api_tokens(name,hash,prefix,day_count) VALUES('old-token','original-token-hash','prefix',7); INSERT INTO questions(fingerprint,title,normal_title,type,answer,source) VALUES('f','保留题目','保留题目','judgement','正确','old'); INSERT INTO answer_versions(question_id,answer,source) SELECT id,answer,source FROM questions; INSERT INTO query_events(token_id,title,status,duration_ms) SELECT id,'保留查询','hit',10 FROM api_tokens; UPDATE settings SET value='{\"legacy\":true}';");
+  const tables=['administrators','sessions','providers','api_tokens','questions','answer_versions','query_events','settings'];
+  const before=new Map<string,any[]>();for(const table of tables)before.set(table,(await p.query(`SELECT * FROM ${table} ORDER BY 1`)).rows);
+  await migrate(p);await migrate(p);
+  for(const table of tables){const after=(await p.query(`SELECT * FROM ${table} ORDER BY 1`)).rows;for(const [i,row] of before.get(table)!.entries())for(const [key,value]of Object.entries(row))assert.deepEqual(after[i][key],value,`${table}.${key}`);}
+  const admin=(await p.query('SELECT * FROM administrators')).rows[0];assert.equal(admin.role,'admin');assert.equal(admin.day_count,7);
+  assert.equal((await p.query('SELECT user_id FROM api_tokens')).rows[0].user_id,1);assert.equal((await p.query('SELECT user_id FROM sessions')).rows[0].user_id,1);
+  assert.equal((await p.query('SELECT user_id FROM query_events')).rows[0].user_id,1);
+  assert.equal((await p.query('SELECT count(*)::int n FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].n,3);
+  assert.equal((await p.query("SELECT format_type(atttypid,atttypmod) t FROM pg_attribute WHERE attrelid='question_vectors'::regclass AND attname='embedding'")).rows[0].t,'vector(512)');
+  assert.equal((await p.query("INSERT INTO administrators(username,password_hash) VALUES('next','hash') RETURNING id")).rows[0].id,2);
+ }finally{await p.end();await database.close();}
 });

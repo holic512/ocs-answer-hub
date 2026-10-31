@@ -19,6 +19,7 @@ const root=existsSync(path.join(parent,'prisma'))?parent:path.dirname(parent);
 installFileLogging();
 try{
  const config=loadRuntimeConfig();
+ process.env.LOCAL_EMBEDDING_PATH=config.embeddingPath;
  const database=new URL(config.databaseUrl);
  logEvent('application.starting',{node:process.version,origin:config.origin,configSource:process.env.CONFIG_FILE??'.env',database:{host:database.hostname,port:database.port,name:decodeURIComponent(database.pathname.slice(1))},stateDir:config.stateDir});
  const {app}=await buildApp({databaseUrl:config.databaseUrl,origin:config.origin,stateDir:config.stateDir,staticDir:path.join(root,'dist/web')});

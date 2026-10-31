@@ -18,7 +18,7 @@ export async function createTestDatabase(){
  const name=`ocs-test-${randomBytes(8).toString('hex')}`;
  const password=randomBytes(24).toString('hex');
  const close=async()=>{await execute('docker',['rm','-f',name]);};
- await execute('docker',['run','-d','--name',name,'-e','POSTGRES_PASSWORD','-e','POSTGRES_DB=answer_hub_test','-p','127.0.0.1::5432','postgres:17-alpine'],{env:{...process.env,POSTGRES_PASSWORD:password}});
+ await execute('docker',['run','-d','--name',name,'-e','POSTGRES_PASSWORD','-e','POSTGRES_DB=answer_hub_test','-p','127.0.0.1::5432','pgvector/pgvector:0.8.2-pg17'],{env:{...process.env,POSTGRES_PASSWORD:password}});
  try{
   for(let attempt=0;;attempt++){
    try{await execute('docker',['exec',name,'pg_isready','-h','127.0.0.1','-U','postgres']);break;}

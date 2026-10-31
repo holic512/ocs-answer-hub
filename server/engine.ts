@@ -2,12 +2,13 @@
  * @file engine.ts
  * @project ocs-answer-hub
  * @module 检索引擎
- * @description 本地答案缓存、按来源顺序查题并持久化答案及查询记录。
- * @logic 本地缓存优先、同题合并、来源有界并发，题库写入后统一使缓存失效。
+ * @description 统一查题链路、本地优先检索、严格 RAG 与持久查询记录。
+ * @logic 直接读取数据库保持跨实例纠错一致性，同题合并，来源有界并发，受理记录更新结果。
  * @dependencies pg, search, providers, security, logging, concurrency
  * @index_tags query, fallback, persistence
  * @author holic512
  */
+import {SemanticService} from './semantic.js';
 import type pg from 'pg';
 import {randomUUID} from 'node:crypto';
 import {logEvent,logError,rememberLogSecrets} from './logging.js';
@@ -18,11 +19,10 @@ import {ConcurrencyPool} from './concurrency.js';
 type LocalResult={code:number;question:string;answer:string;source:string;origin:string;questionId:string;verified:boolean;match:string};
 export class Engine{
  private inflight=new Map<string,{id:string;promise:Promise<any>}>();private providerQueues=new Map<string,ConcurrencyPool>();
- private localCache=new Map<string,{expires:number;value:LocalResult}>();private cacheEpoch=0;
- invalidateLocal(){this.cacheEpoch++;this.localCache.clear();}
- constructor(public pool:pg.Pool,public key:string,public transport?:Transport){ }
+ invalidateLocal(){}
+ constructor(public pool:pg.Pool,public key:string,public transport?:Transport,public semantic?:SemanticService){ }
  async store(q:Prepared,answer:string,source:string,verified=false,queryId?:string){
-  const client=await this.pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[q.key]);
+  const client=await this.pool.connect();try{await client.query('BEGIN');await client.query('SELECT pg_advisory_xact_lock_shared(764003)');await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[q.key]);
    const old=(await client.query('SELECT * FROM questions WHERE fingerprint=$1 FOR UPDATE',[q.key])).rows[0];
    let row:any;
    if(old){
@@ -34,23 +34,14 @@ export class Engine{
   }catch(e){await client.query('ROLLBACK');logEvent('question.store.failed',{queryId,fingerprint:q.key,source,error:logError(e)},'error');throw e;}finally{client.release();}
  }
  async local(q:Prepared){
-  const epoch=this.cacheEpoch,cached=this.localCache.get(q.key);
-  if(cached&&cached.expires>Date.now()){
-   this.localCache.delete(q.key);this.localCache.set(q.key,cached);
-   await this.pool.query('UPDATE questions SET hit_count=hit_count+1 WHERE id=$1',[cached.value.questionId]);
-   logEvent('query.cache',{fingerprint:q.key,status:'hit'});
-   return {...cached.value,question:q.title};
-  }
-  this.localCache.delete(q.key);
   let row=(await this.pool.query('SELECT * FROM questions WHERE fingerprint=$1 AND NOT deleted AND NOT conflict',[q.key])).rows[0];let match='exact';
   if(!row){const candidate=(await this.pool.query('SELECT * FROM questions WHERE type=$1 AND NOT deleted AND NOT conflict AND abs(length(normal_title)-length($2))<=3 AND normal_title LIKE $3 ORDER BY verified DESC,hit_count DESC LIMIT 100',[q.type,q.normalTitle,`%${q.normalTitle.slice(0,3).replace(/[\\%_]/g,'')}%`])).rows;
    const valid=candidate.filter(r=>fuzzySafe(q,prepare({title:r.title,type:r.type,options:r.options,images:r.images,course:r.course})));if(valid.length===1){row=valid[0];match='fuzzy';}
   }
-  if(!row||!canonicalAnswer(row.answer,q))return null;
+  if(!row&&this.semantic){const found=await this.semantic.match(q);if(found){row=found.row;match='vector';}}
+  if(!row)return null;const original=prepare({title:row.title,type:row.type,options:row.options,images:row.images,course:row.course});const answer=canonicalAnswer(canonicalAnswer(row.answer,original),q);if(!answer)return null;
   await this.pool.query('UPDATE questions SET hit_count=hit_count+1 WHERE id=$1',[row.id]);
-  const value:LocalResult={code:1,question:q.title,answer:row.answer,source:'本地题库',origin:row.source,questionId:row.id,verified:row.verified,match};
-  // 写入期间完成的旧读取不能重新填回缓存；模糊匹配也随整库变更失效。
-  if(epoch===this.cacheEpoch){if(this.localCache.size>=256)this.localCache.delete(this.localCache.keys().next().value!);this.localCache.set(q.key,{expires:Date.now()+30000,value});}
+  const value:LocalResult={code:1,question:q.title,answer,source:'本地题库',origin:row.source,questionId:row.id,verified:row.verified,match};
   return value;
  }
 
@@ -64,7 +55,8 @@ export class Engine{
   try{providerConfig=decrypt(p.config_cipher,this.key);rememberLogSecrets(providerConfig);const timeoutMs=Math.max(1,Math.min(deadline-Date.now(),p.timeout_ms));
    logEvent('provider.started',{queryId,providerId:p.id,providerName:p.name,kind:p.kind,model:providerConfig.model,apiFormat:providerConfig.apiFormat,maxTokens:providerConfig.maxTokens,vision:providerConfig.vision,timeoutMs,endpoint:providerConfig.baseUrl??providerConfig.url??'https://tk.enncy.cn/query'},'info',providerConfig);
    let observed:any=undefined;const capture:Transport=async(...args)=>{logEvent('provider.request',{queryId,providerId:p.id,url:args[0],method:args[1],timeoutMs:args[4],bodyFields:args[3]&&typeof args[3]==='object'?Object.keys(args[3]):[]},'info',providerConfig);const result=await (this.transport??safeRequest)(args[0],args[1],args[2],args[3],args[4],event=>logEvent('provider.network',{queryId,providerId:p.id,...event},event.status==='failed'?'warn':'info',providerConfig));observed=result;logEvent('provider.response',{queryId,providerId:p.id,responseFields:result&&typeof result==='object'?Object.keys(result):[],responseType:Array.isArray(result)?'array':typeof result},'info',providerConfig);return result;};
-   const result=await queryProvider({...p,config:providerConfig},q,timeoutMs,capture,event=>logEvent('provider.mapping',{queryId,providerId:p.id,...event},event.status==='failed'?'warn':'info',providerConfig));
+   const rag=p.kind==='ai'&&this.semantic?await this.semantic.rag(q):undefined;if(rag)attempts.push({source:'RAG',status:rag.enabled?'enabled':'filtered',reason:rag.reason});
+   const result=await queryProvider({...p,config:providerConfig},q,Math.max(1,Math.min(p.timeout_ms,deadline-Date.now())),capture,event=>logEvent('provider.mapping',{queryId,providerId:p.id,...event},event.status==='failed'?'warn':'info',providerConfig),rag);
    logEvent('provider.completed',{queryId,providerId:p.id,status:result?'hit':'miss',durationMs:Date.now()-start,answer:result?.answer,usage:result?.usage},'info',providerConfig);
    if(observed!==undefined)await this.pool.query('INSERT INTO provider_observations(fingerprint,title,source,status,response_cipher) VALUES($1,$2,$3,$4,$5)',[q.key,q.title,p.name,result?'valid':'no_valid_answer',encrypt(observed,this.key)]);
    if(!result){attempts.push({source:p.name,status:'miss',durationMs:Date.now()-start});continue;}
@@ -75,17 +67,17 @@ export class Engine{
  }
  return {code:0,question:q.title,answer:null,source:null,message:'未找到可用答案，请在后台配置题库源或人工补充',attempts};
  }
- async query(input:QuestionInput,tokenId:string|null){
+ async query(input:QuestionInput,tokenId:string|null,eventId?:string){
   const start=Date.now(),q=prepare(input);let entry=this.inflight.get(q.key);const joined=Boolean(entry);
-  if(!entry){if(this.inflight.size>=20)throw Object.assign(new Error('查题繁忙，请稍后重试'),{statusCode:429});const id=randomUUID();const promise=this.execute(q,id);entry={id,promise};this.inflight.set(q.key,entry);const active=entry;void promise.finally(()=>{if(this.inflight.get(q.key)===active)this.inflight.delete(q.key);}).catch(()=>{});}
+  if(!entry){if(this.inflight.size>=20){if(eventId)await this.pool.query("UPDATE query_events SET status='rejected' WHERE id=$1",[eventId]);throw Object.assign(new Error('查题繁忙，请稍后重试'),{statusCode:429});}const id=randomUUID();const promise=this.execute(q,id);entry={id,promise};this.inflight.set(q.key,entry);const active=entry;void promise.finally(()=>{if(this.inflight.get(q.key)===active)this.inflight.delete(q.key);}).catch(()=>{});}
   const current=entry;
   logEvent(joined?'query.joined':'query.started',{queryId:current.id,fingerprint:q.key,tokenId,question:{title:q.title,type:q.type,choices:q.choices,imageCount:q.images.length}});
   try{
    const result=await current.promise;
-   await this.pool.query('INSERT INTO query_events(token_id,title,status,source,question_id,duration_ms,attempts) VALUES($1,$2,$3,$4,$5,$6,$7)',[tokenId,q.title,result.code===1?'hit':'miss',result.source,result.questionId??null,Date.now()-start,JSON.stringify(result.attempts)]);
+   if(eventId)await this.pool.query('UPDATE query_events SET status=$2,source=$3,question_id=$4,duration_ms=$5,attempts=$6 WHERE id=$1',[eventId,result.code===1?'hit':'miss',result.source,result.questionId??null,Date.now()-start,JSON.stringify(result.attempts)]);else await this.pool.query('INSERT INTO query_events(token_id,title,status,source,question_id,duration_ms,attempts) VALUES($1,$2,$3,$4,$5,$6,$7)',[tokenId,q.title,result.code===1?'hit':'miss',result.source,result.questionId??null,Date.now()-start,JSON.stringify(result.attempts)]);
    logEvent('query.completed',{queryId:current.id,tokenId,status:result.code===1?'hit':'miss',source:result.source,questionId:result.questionId,answer:result.answer,attempts:result.attempts,durationMs:Date.now()-start});
    return {...result,durationMs:Date.now()-start};
-  }catch(error){logEvent('query.failed',{queryId:current.id,error:logError(error),durationMs:Date.now()-start},'error');throw error;}
+  }catch(error){if(eventId)await this.pool.query("UPDATE query_events SET status='error',duration_ms=$2 WHERE id=$1",[eventId,Date.now()-start]);logEvent('query.failed',{queryId:current.id,error:logError(error),durationMs:Date.now()-start},'error');throw error;}
   finally{if(this.inflight.get(q.key)===current)this.inflight.delete(q.key);}
  }
 }

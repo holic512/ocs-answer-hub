@@ -10,6 +10,7 @@
  */
 import {readFileSync} from 'node:fs';
 import {parseEnv} from 'node:util';
+import path from 'node:path';
 import {isIP} from 'node:net';
 import {z} from 'zod';
 
@@ -22,6 +23,7 @@ const runtimeSchema=z.object({
  APP_ORIGIN:z.string().refine(value=>{try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)&&url.origin===value;}catch{return false;}},'请填写完整的 HTTP/HTTPS 访问地址，不带路径或末尾斜杠').default('http://127.0.0.1:18771'),
  HOST:z.string().min(1).refine(value=>isIP(value)!==0||/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(value),'监听地址只能填写主机名或 IP').default('127.0.0.1'),
  PORT:z.coerce.number().int().min(1).max(65535).default(18771),
+ LOCAL_EMBEDDING_PATH:z.string().refine(value=>value===''||path.isAbsolute(value),'模型目录必须是绝对路径').default(''),
  STATE_DIR:z.string().min(1).default('./state')
 });
 
@@ -34,7 +36,7 @@ export function loadRuntimeConfig({env=process.env,file=env.CONFIG_FILE}:{env?:N
  const parsed=runtimeSchema.safeParse({...inherited,...external});
  if(!parsed.success)throw new Error('运行配置无效：'+parsed.error.issues.map(issue=>`${issue.path.join('.')}：${issue.message}`).join('；'));
  const values=parsed.data;
- return {databaseUrl:databaseUrl({...values,DB_PORT:String(values.DB_PORT),PORT:String(values.PORT)})!,origin:values.APP_ORIGIN,host:values.HOST,port:values.PORT,stateDir:values.STATE_DIR};
+ return {databaseUrl:databaseUrl({...values,DB_PORT:String(values.DB_PORT),PORT:String(values.PORT)})!,origin:values.APP_ORIGIN,host:values.HOST,port:values.PORT,stateDir:values.STATE_DIR,embeddingPath:values.LOCAL_EMBEDDING_PATH};
 }
 
 function readConfigFile(file:string){
