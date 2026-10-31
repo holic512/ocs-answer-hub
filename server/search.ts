@@ -27,6 +27,6 @@ function matchChoice(value:string,choices:string[]):string|undefined{
  const choice=choices[labelled[1].toUpperCase().charCodeAt(0)-65];
  return choice&&compact(choice)===compact(labelled[2])?choice:undefined;
 }
-function signature(text:string){return JSON.stringify([text.match(/\d+(?:\.\d+)?/g)??[],text.match(/不是|不正确|不属于|不能|不得|不包括|不|错误|除外|至少|至多|以上|以下|大于|小于/g)??[]]);}
+function signature(text:string){return JSON.stringify([text.match(/[+\-−]?\d+(?:\.\d+)?(?:%|‰)?/g)??[],text.match(/不是|不正确|不属于|不能|不得|不包括|不|错误|除外|至少|至多|以上|以下|大于|小于|\b(?:not|never|except|incorrect|less|more)\b/gi)??[]]);}
 export function dice(a:string,b:string){if(a===b)return 1;const grams=(s:string)=>new Set(Array.from({length:Math.max(s.length-1,0)},(_,i)=>s.slice(i,i+2)));const aa=grams(a),bb=grams(b);if(!aa.size||!bb.size)return 0;return 2*[...aa].filter(x=>bb.has(x)).length/(aa.size+bb.size);}
 export function fuzzySafe(a:Prepared,b:Prepared){return a.type===b.type&&JSON.stringify(a.optionSet)===JSON.stringify(b.optionSet)&&JSON.stringify(a.images)===JSON.stringify(b.images)&&(a.course??'')===(b.course??'')&&signature(a.normalTitle)===signature(b.normalTitle)&&(a.normalTitle===b.normalTitle||(a.normalTitle.length>=40&&dice(a.normalTitle,b.normalTitle)>=.985));}

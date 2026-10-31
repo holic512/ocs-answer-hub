@@ -19,3 +19,5 @@ test('labelled choice answers require the label and text to match the same optio
  const language=prepare({title:'语言',type:'single',options:'A. C#\nB. Java'});
  assert.equal(canonicalAnswer('A. C#',language),'C#');
 });
+
+test('long fuzzy candidates preserve numeric signs and English negation',()=>{const prefix='这是一段用于说明题目条件且必须保留具体判断依据的较长公共题干'.repeat(6);const q=prepare({title:prefix+'取值为-10是否符合要求',type:'judgement'});assert.equal(fuzzySafe(q,prepare({...q,title:prefix+'取值为+10是否符合要求'})),false);assert.equal(fuzzySafe(prepare({title:prefix+'it is correct',type:'judgement'}),prepare({title:prefix+'it is not correct',type:'judgement'})),false);});
