@@ -1,5 +1,6 @@
+import {Select} from './components/ui/select';
 import {Button} from './components/ui/button';
-import {Textarea, NativeSelect} from './components/ui/input';
+import {Textarea} from './components/ui/input';
 import {Badge} from './components/ui/badge';
 import {useState} from 'react';
 type Props={provider:any;sourceId?:string;run:(fn:()=>Promise<any>)=>Promise<any>;api:(url:string,method?:string,body?:any)=>Promise<any>};
@@ -10,7 +11,7 @@ export default function ProviderTestPanel({provider,sourceId,run,api}:Props){
  const execute=()=>{if(!title.trim())return;setPending(true);setResult(null);run(async()=>setResult(await api(sourceId?`/admin/providers/${sourceId}/test`:'/admin/providers/test','POST',{provider,question:{title,type,options}}))).finally(()=>setPending(false));};
  return <div className="provider-test-panel">
   <div className="notice neutral"><div><strong>仅测试「{provider.name}」</strong><p>跳过本地及其他来源，未启用也可测试；不保存配置、不入库、不计入查题统计。会实际请求上游，可能消耗题库或AI额度。</p></div></div>
-  <div className="form-grid"><label className="field"><span>测试题型</span><NativeSelect aria-label="测试题型" value={type} onChange={e=>setType(e.target.value)}>{Object.entries(types).map(([k,v])=><option value={k} key={k}>{v}</option>)}</NativeSelect></label><div className="test-source-state"><Badge tone="gray">{provider.enabled?'来源已启用':'来源未启用，也可测试'}</Badge><small>使用当前配置 · 超时 {provider.timeout_ms/1000} 秒</small></div></div>
+  <div className="form-grid"><label className="field"><span>测试题型</span><Select aria-label="测试题型" value={type} onChange={e=>setType(e.target.value)}>{Object.entries(types).map(([k,v])=><option value={k} key={k}>{v}</option>)}</Select></label><div className="test-source-state"><Badge tone="gray">{provider.enabled?'来源已启用':'来源未启用，也可测试'}</Badge><small>使用当前配置 · 超时 {provider.timeout_ms/1000} 秒</small></div></div>
   <label className="field"><span>测试题目</span><Textarea aria-label="测试题目" rows={2} value={title} onChange={e=>setTitle(e.target.value)} required/></label>
   <label className="field"><span>测试选项</span><Textarea aria-label="测试选项" rows={3} value={options} onChange={e=>setOptions(e.target.value)}/><small>建议用该题库已有的题目；接口连通但未收录本题，不等于链路故障。</small></label>
   <Button type="button" className="primary full" disabled={pending||!title.trim()} onClick={execute}>{pending?'正在测试该来源…':'开始测试'}</Button>

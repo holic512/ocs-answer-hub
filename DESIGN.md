@@ -2,7 +2,7 @@
 
 ## 设计方向
 
-保留绿色品牌，使用紧凑、专业、稳定的浅色工作台。减少留白和圆角，采用边框区分信息区域。主要场景是普通用户查题，以及管理员维护题库、调整来源、管理账号和 OCS 凭证。优先保证中文阅读、操作层级和检索状态清晰。
+采用黑白灰主题，提供浅色和深色模式，以清晰、稳定的管理工作台为目标。减少留白和圆角，采用边框区分信息区域。主要场景是普通用户查题，以及管理员维护题库、调整来源、管理账号和 OCS 凭证。优先保证中文阅读、操作层级和检索状态清晰。
 
 ## 全页面审查与风格划分
 
@@ -26,8 +26,8 @@
 
 `web/src/style.css` 是唯一基础 token 来源。
 
-- 背景 `#f6f8f7`、表面 `#ffffff`、正文 `#23352e`。
-- 主色 `#176b56`、辅助文字 `#586b61`、边框 `#dce4df`。
+- 浅色背景 `#fafafa`、表面 `#ffffff`、正文 `#18181b`；深色背景 `#111113`、表面 `#19191c`、正文 `#fafafa`。
+- 主色为中性黑白，辅助文字 `#62626b`、边框 `#e4e4e7`；深色模式统一通过语义变量适配。
 - 成功、警告、错误必须使用各自前景与背景变量，不通过透明度淡化文字。
 - 正文 14px、辅助说明及标签至少 12px、表格 13px、标题 24–28px。
 - 按钮及输入默认至少 36px，紧凑操作至少 32px，移动导航至少 44px；卡片圆角 6px，控件 4px，弹窗 8px。
@@ -36,9 +36,9 @@
 
 ## 组件约定
 
-采用 shadcn 的源码组件模式：Tailwind v4、Radix Dialog/Slot、CVA、clsx、tailwind-merge；组件位于 `web/src/components/ui`，配置见 `components.json`。这是面向现有 CSS 的项目适配版本，未使用 CLI 原样生成。
+采用 shadcn 的源码组件模式：Tailwind v4、Radix Dialog/AlertDialog/Select/Slot、CVA、clsx、tailwind-merge；组件位于 `web/src/components/ui`，配置见 `components.json`。这是面向现有 CSS 的项目适配版本，未使用 CLI 原样生成。
 
-所有按钮使用 Button，输入使用 Input/Textarea/NativeSelect，状态使用 Badge，弹窗使用 Modal。Button 支持 default、outline、ghost、destructive 语义变体；保留已有 primary/secondary 类作为迁移兼容。普通下拉保留原生 select，支持键盘和移动设备。
+所有按钮使用 Button，输入使用 Input/Textarea/Select，状态使用 Badge，弹窗使用 Modal。Button 支持 default、outline、ghost、destructive 语义变体；保留已有 primary/secondary 类作为迁移兼容。下拉使用 Radix Select Portal，支持键盘导航、表单提交与重置，不再直接显示原生 select。
 
 页面布局由 AppLayout / AuthLayout 和 style.css 管理；provider-test.css 仅负责测试面板布局和语义状态。新页面不可再定义独立的品牌色、基础按钮、输入样式或弹窗实现。
 
@@ -49,7 +49,7 @@
 - 820px 以下侧栏折叠，导航保留 aria-label/title；内容双栏变单栏。
 - 480px 以下缩小外边距、折行操作区，表格在局部容器横向滚动。
 - 尊重 prefers-reduced-motion；状态不能仅靠颜色表达。
-- 删除和撤销仍使用已有浏览器确认，保留现有业务语义。
+- 删除和撤销使用 Radix AlertDialog，取消默认获得焦点，确认后执行原有业务操作。
 
 系统页脚显示构建时从 package.json 注入的应用版本，版本递增规则见 docs/DATABASE_AND_VERSIONING.md。
 
@@ -67,4 +67,6 @@
 
 ## 多用户工作台
 
-登录默认进入 `/query`。普通用户导航仅含查题与安全设置，管理页面在路由守卫和后端同时隔离。工作台显示当前账号当天已用、剩余额度与自己的最近记录；管理员也遵循相同查题入口和扣额规则。`/users` 管理账号、限额、状态和密码；`/jobs` 管理生成与回填、进度、取消、重试和结果预览。沿用现有组件、响应式表格和绿色品牌，不额外增加动效。
+登录默认进入 `/query`。普通用户导航仅含查题与安全设置，管理页面在路由守卫和后端同时隔离。工作台显示当前账号当天已用、剩余额度与自己的最近记录；管理员也遵循相同查题入口和扣额规则。`/users` 管理账号、限额、状态和密码；`/jobs` 管理生成与回填、进度、取消、重试和结果预览。沿用现有组件、响应式表格和黑白主题，不额外增加动效。
+
+用户创建、密码重置和任务结果预览使用受控弹窗；小屏顶部导航保留文字并局部横向滚动。主题偏好保存在本地，入口恢复主题，减少页面切换闪烁。

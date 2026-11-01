@@ -2,20 +2,23 @@
  * @file app.tsx
  * @project ocs-answer-hub
  * @module 应用会话
- * @description 管理初始化检查、用户会话、请求反馈与通知。
+ * @description 管理初始化检查、用户会话、请求反馈、通知与异步操作确认。
  * @logic 先检查初始化再恢复会话，向布局及页面提供统一状态和操作。
- * @dependencies React, lib/api
+ * @dependencies React, lib/api, components/ui/confirmation
  * @index_tags session, setup, feedback
  * @author holic512
  */
 import {createContext,useContext,useState,useEffect,useRef,type ReactNode} from 'react';
+import {Confirmation} from '../components/ui/confirmation';
 import {api,setCsrf} from '../lib/api';
 type User={id:number;role:'admin'|'user';username:string;csrf:string;mustChange:boolean};
-type AppState={user:User|null;loaded:boolean;setupRequired:boolean|null;error:string;notice:string;busy:boolean;loginName:string;loadUser:()=>Promise<void>;run:(fn:()=>Promise<any>)=>Promise<any>;notify:(message:string)=>void;clearError:()=>void;login:(data:Record<string,FormDataEntryValue>)=>Promise<User>;endSession:()=>void;logout:()=>Promise<void>;completeSetup:(username?:string)=>Promise<void>};
+type AppState={confirm:(message:string)=>Promise<boolean>;user:User|null;loaded:boolean;setupRequired:boolean|null;error:string;notice:string;busy:boolean;loginName:string;loadUser:()=>Promise<void>;run:(fn:()=>Promise<any>)=>Promise<any>;notify:(message:string)=>void;clearError:()=>void;login:(data:Record<string,FormDataEntryValue>)=>Promise<User>;endSession:()=>void;logout:()=>Promise<void>;completeSetup:(username?:string)=>Promise<void>};
 const AppContext=createContext<AppState>(null!);
 export function AppProvider({children}:{children:ReactNode}){
  const [user,setUser]=useState<User|null>(null),[loaded,setLoaded]=useState(false),[setupRequired,setSetupRequired]=useState<boolean|null>(null);
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[pending,setPending]=useState(0),[loginName,setLoginName]=useState('admin');
+ const [confirmation,setConfirmation]=useState<{message:string;resolve:(answer:boolean)=>void}|null>(null);
+ function confirm(message:string){return new Promise<boolean>(resolve=>setConfirmation({message,resolve}));}
  const noticeTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  async function loadUser(){
   setLoaded(false);setError('');
@@ -30,6 +33,6 @@ export function AppProvider({children}:{children:ReactNode}){
  async function login(data:Record<string,FormDataEntryValue>){const current=await api('/login','POST',data);setCsrf(current.csrf);setUser(current);setNotice('');return current;}
  async function logout(){await api('/admin/logout','POST',{});endSession();}
  async function completeSetup(username?:string){setLoginName(username??'');await loadUser();notify(username?'管理员已创建，请使用新账号登录':'系统已完成初始化，请登录');}
- return <AppContext.Provider value={{user,loaded,setupRequired,error,notice,busy:pending>0,loginName,loadUser,run,notify,clearError:()=>setError(''),login,endSession,logout,completeSetup}}>{children}</AppContext.Provider>;
+ return <AppContext.Provider value={{confirm,user,loaded,setupRequired,error,notice,busy:pending>0,loginName,loadUser,run,notify,clearError:()=>setError(''),login,endSession,logout,completeSetup}}>{children}{confirmation&&<Confirmation message={confirmation.message} onAnswer={answer=>{confirmation.resolve(answer);setConfirmation(null);}}/>}</AppContext.Provider>;
 }
 export function useApp(){return useContext(AppContext);}

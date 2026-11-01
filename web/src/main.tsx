@@ -14,4 +14,5 @@ import App from './App';
 import {AppProvider} from './context/app';
 import './style.css';
 import './provider-test.css';
+document.documentElement.dataset.theme=localStorage.getItem('theme')??'light';
 createRoot(document.getElementById('root')!).render(<BrowserRouter><AppProvider><App/></AppProvider></BrowserRouter>);
