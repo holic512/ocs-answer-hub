@@ -21,6 +21,7 @@ import OverviewPage from './pages/OverviewPage';
 import QuestionsPage from './pages/QuestionsPage';
 import ProvidersPage from './pages/ProvidersPage';
 import QueryPage from './pages/QueryPage';
+import HistoryPage from './pages/HistoryPage';
 import TokensPage from './pages/TokensPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
@@ -28,7 +29,7 @@ import JobsPage from './pages/JobsPage';
 import NotFoundPage from './pages/NotFoundPage';
 export default function App(){
  const {loaded,setupRequired,user,error,loadUser,completeSetup}=useApp();const location=useLocation();
- useEffect(()=>{const titles:Record<string,string>={'/setup':'初始化管理员','/login':'登录','/overview':'概览','/questions':'本地题库','/providers':'检索来源','/query':'查题工作台','/tokens':'OCS 接入','/users':'用户管理','/jobs':'AI 题库任务','/settings':'安全设置'};document.title=`${titles[location.pathname]??'页面不存在'} · 知序`;},[location.pathname]);
+ useEffect(()=>{const titles:Record<string,string>={'/setup':'初始化管理员','/login':'登录','/overview':'概览','/questions':'本地题库','/providers':'检索来源','/query':'查题工作台','/history':'查询记录','/tokens':'OCS 接入','/users':'用户管理','/jobs':'AI 题库任务','/settings':'安全设置'};document.title=`${titles[location.pathname]??'页面不存在'} · 知序`;},[location.pathname]);
  if(!loaded)return <main className="boot" role="status">知序 · 正在检查初始化状态</main>;
  if(setupRequired===null)return <main className="boot"><p role="alert">{error||'无法检查系统初始化状态'}</p><Button className="secondary" onClick={()=>loadUser()}>重新连接</Button></main>;
  if(setupRequired&&location.pathname!=='/setup')return <Navigate to="/setup" replace state={{from:location.pathname+location.search}}/>;
@@ -37,7 +38,7 @@ export default function App(){
   <Route element={<AuthLayout/>}><Route path="setup" element={<InitialSetup api={api} onComplete={completeSetup}/>}/><Route path="login" element={user?<Navigate to={user.mustChange?'/settings':location.state?.from??'/query'} replace/>:<LoginPage/>}/></Route>
   <Route element={<RequireSession/>}><Route element={<AppLayout/>}>
    <Route index element={<Navigate to="/query" replace/>}/>
-   <Route element={<RequireAdmin/>}><Route path="users" element={<UsersPage/>}/><Route path="jobs" element={<JobsPage/>}/><Route path="overview" element={<OverviewPage/>}/><Route path="questions" element={<QuestionsPage/>}/><Route path="providers" element={<ProvidersPage/>}/><Route path="tokens" element={<TokensPage/>}/></Route><Route path="query" element={<QueryPage/>}/><Route path="settings" element={<SettingsPage/>}/><Route path="*" element={<NotFoundPage/>}/>
+   <Route element={<RequireAdmin/>}><Route path="users" element={<UsersPage/>}/><Route path="jobs" element={<JobsPage/>}/><Route path="overview" element={<OverviewPage/>}/><Route path="questions" element={<QuestionsPage/>}/><Route path="providers" element={<ProvidersPage/>}/><Route path="tokens" element={<TokensPage/>}/></Route><Route path="query" element={<QueryPage/>}/><Route path="history" element={<HistoryPage/>}/><Route path="settings" element={<SettingsPage/>}/><Route path="*" element={<NotFoundPage/>}/>
   </Route></Route>
  </Routes>;
 }

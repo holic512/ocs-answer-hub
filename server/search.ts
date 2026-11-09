@@ -8,7 +8,10 @@ export function prepare(q:QuestionInput){const title=normalise(q.title),type=['s
 const truth=new Map([['true','正确'],['false','错误'],['正确','正确'],['错误','错误'],['对','正确'],['错','错误'],['√','正确'],['×','错误'],['是','正确'],['否','错误'],['1','正确'],['0','错误']]);
 export function canonicalAnswer(raw:unknown,q:Prepared):string|null{
  if(raw===null||raw===undefined)return null;
- if(q.type==='single'&&typeof raw==='string'){const exact=q.choices.find(choice=>compact(choice)===compact(raw))??matchChoice(normalise(raw).replace(/^(?:正确)?答案\s*[:：]\s*/,''),q.choices);if(exact)return exact;}
+ if(q.type==='single'&&typeof raw==='string'){
+  const original=matchChoice(normalise(raw),q.choices);if(original)return original;
+  const matched=matchChoice(normalise(raw).replace(/^(?:正确)?答案\s*[:：]\s*/,''),q.choices);if(matched)return matched;
+ }
  let values=Array.isArray(raw)?raw.map(String):String(raw).trim().replace(/^(?:正确)?答案\s*[:：]\s*/,'').split(/#|\|\|/);
  values=values.map(x=>normalise(x)).filter(Boolean);if(!values.length||values.some(x=>/^(?:未知|不知道|无法确定|无答案|未找到|undefined|null|not found)$/i.test(x)))return null;
  if(q.type==='judgement')return truth.get(values[0].toLowerCase())??null;
@@ -23,9 +26,17 @@ export function canonicalAnswer(raw:unknown,q:Prepared):string|null{
 function matchChoice(value:string,choices:string[]):string|undefined{
  const exact=choices.find(choice=>compact(choice)===compact(value));if(exact)return exact;
  if(/^[A-Z]$/i.test(value))return choices[value.toUpperCase().charCodeAt(0)-65];
+ const text=choiceText(value,choices);if(text)return text;
  const labelled=/^([A-Z])[.、:)]\s*(.+)$/i.exec(value);if(!labelled)return undefined;
  const choice=choices[labelled[1].toUpperCase().charCodeAt(0)-65];
- return choice&&compact(choice)===compact(labelled[2])?choice:undefined;
+ return choice&&choiceText(labelled[2],choices)===choice?choice:undefined;
+}
+function choiceText(value:string,choices:string[]):string|undefined{
+ const exact=choices.find(choice=>compact(choice)===compact(value));if(exact)return exact;
+ // OCS choices can carry a terminal display separator that AI omits. Keep identity and internal punctuation intact.
+ const key=compact(value).replace(/;$/u,'');
+ const matches=choices.filter(choice=>compact(choice).replace(/;$/u,'')===key);
+ return matches.length===1?matches[0]:undefined;
 }
 function signature(text:string){return JSON.stringify([text.match(/[+\-−]?\d+(?:\.\d+)?(?:%|‰)?/g)??[],text.match(/不是|不正确|不属于|不能|不得|不包括|不|错误|除外|至少|至多|以上|以下|大于|小于|\b(?:not|never|except|incorrect|less|more)\b/gi)??[]]);}
 export function dice(a:string,b:string){if(a===b)return 1;const grams=(s:string)=>new Set(Array.from({length:Math.max(s.length-1,0)},(_,i)=>s.slice(i,i+2)));const aa=grams(a),bb=grams(b);if(!aa.size||!bb.size)return 0;return 2*[...aa].filter(x=>bb.has(x)).length/(aa.size+bb.size);}

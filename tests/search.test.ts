@@ -21,3 +21,31 @@ test('labelled choice answers require the label and text to match the same optio
 });
 
 test('long fuzzy candidates preserve numeric signs and English negation',()=>{const prefix='这是一段用于说明题目条件且必须保留具体判断依据的较长公共题干'.repeat(6);const q=prepare({title:prefix+'取值为-10是否符合要求',type:'judgement'});assert.equal(fuzzySafe(q,prepare({...q,title:prefix+'取值为+10是否符合要求'})),false);assert.equal(fuzzySafe(prepare({title:prefix+'it is correct',type:'judgement'}),prepare({title:prefix+'it is not correct',type:'judgement'})),false);});
+
+test('OCS terminal semicolons can be omitted by AI without changing the returned choices or question identity',()=>{
+ const input={title:'以下关于工作包的说法正确的是',type:'multiple',options:['同一个人可以负责多个工作包;','工作包可以小于1天；','同层工作包可以重叠;']};
+ const q=prepare(input),key=q.key;
+ assert.equal(canonicalAnswer('同一个人可以负责多个工作包#工作包可以小于1天',q),'同一个人可以负责多个工作包;#工作包可以小于1天;');
+ assert.equal(canonicalAnswer('A. 同一个人可以负责多个工作包#B. 工作包可以小于1天',q),'同一个人可以负责多个工作包;#工作包可以小于1天;');
+ assert.equal(canonicalAnswer('B. 同一个人可以负责多个工作包',q),null);
+ assert.equal(canonicalAnswer('同一个人可以负责多个工作包',prepare({...input,type:'single'})),'同一个人可以负责多个工作包;');
+ assert.equal(prepare(input).key,key);
+});
+
+test('semicolon matching remains unique and preserves meaningful internal punctuation and exact matches',()=>{
+ const q=prepare({title:'匹配选项',type:'single',options:['a;b;','ab;']});
+ assert.equal(canonicalAnswer('a;b',q),'a;b;');
+ assert.equal(canonicalAnswer('a b',q),'ab;');
+ assert.equal(canonicalAnswer('a,b',q),null);
+ const exact=prepare({title:'精确优先',type:'single',options:['甲;','甲']});assert.equal(canonicalAnswer('甲',exact),'甲');
+ const ambiguous=prepare({title:'显示分隔符歧义',type:'single',options:['甲;','甲；']});assert.equal(canonicalAnswer('甲',ambiguous),null);
+ const letters=prepare({title:'字母按原来的选项索引解析',type:'single',options:['乙;','A;']});assert.equal(canonicalAnswer('A',letters),'乙;');
+});
+
+test('complete original choices take priority over answer prefix removal',()=>{
+ const q=prepare({title:'完整选项优先',type:'single',options:['答案：甲','甲','正确答案：乙','乙']});
+ assert.equal(canonicalAnswer('答案：甲',q),'答案:甲');
+ assert.equal(canonicalAnswer('正确答案：乙',q),'正确答案:乙');
+ assert.equal(canonicalAnswer('答案：B. 甲',q),'甲');
+ assert.equal(canonicalAnswer('答案：甲',prepare({...q,options:['答案：甲;','甲']})),'答案:甲;');
+});

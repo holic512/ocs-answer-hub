@@ -13,7 +13,8 @@ test('fresh migrations repeat safely; legacy upgrade preserves every original ta
   const admin=(await p.query('SELECT * FROM administrators')).rows[0];assert.equal(admin.role,'admin');assert.equal(admin.day_count,7);
   assert.equal((await p.query('SELECT user_id FROM api_tokens')).rows[0].user_id,1);assert.equal((await p.query('SELECT user_id FROM sessions')).rows[0].user_id,1);
   assert.equal((await p.query('SELECT user_id FROM query_events')).rows[0].user_id,1);
-  assert.equal((await p.query('SELECT count(*)::int n FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].n,3);
+  assert.equal((await p.query('SELECT count(*)::int n FROM _prisma_migrations WHERE finished_at IS NOT NULL')).rows[0].n,4);
+  const historical=(await p.query('SELECT fingerprint,question_snapshot,request_id,query_id,failure_code FROM query_events')).rows[0];assert.deepEqual(historical,{fingerprint:null,question_snapshot:null,request_id:null,query_id:null,failure_code:null});
   assert.equal((await p.query("SELECT format_type(atttypid,atttypmod) t FROM pg_attribute WHERE attrelid='question_vectors'::regclass AND attname='embedding'")).rows[0].t,'vector(512)');
   assert.equal((await p.query("INSERT INTO administrators(username,password_hash) VALUES('next','hash') RETURNING id")).rows[0].id,2);
  }finally{await p.end();await database.close();}

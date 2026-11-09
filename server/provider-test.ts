@@ -9,6 +9,7 @@
  * @author holic512
  */
 import {safeRequest,type NetworkEvent} from './security.js';
+import {providerFailure} from './provider-diagnostics.js';
 import {logEvent,rememberLogSecrets} from './logging.js';
 import {prepare,type QuestionInput} from './search.js';
 import {queryProvider,validateProvider,type Provider,type Transport,type ProviderDiagnostic} from './providers.js';
@@ -34,11 +35,9 @@ export async function probeProvider(provider:Provider,input:QuestionInput,transp
   if(result){report.status='passed';report.answer=result.answer;if(result.usage)report.usage=result.usage;}
   else{const failure=steps.find(s=>s.status==='failed');if(failure){report.status='failed';report.failureCode=failure.code??'response_mapping';}else{report.status='no_answer';if(!steps.some(s=>s.status==='no_answer'))steps.push({stage:'answer',status:'no_answer',message:'上游已响应，本题未返回可用答案'});}}
  }catch(e:any){
-  const code=String(e.code??'');const status=Number(e.httpStatus)||undefined;
-  const failure=code==='UPSTREAM_HTTP'?(status===401||status===403?'authentication':status===429?'rate_limit':'http'):code==='UPSTREAM_JSON'?'response_format':code==='UPSTREAM_DNS'?'dns':code==='UPSTREAM_TLS'?'tls':code==='UPSTREAM_ADDRESS'?'address':code==='UPSTREAM_SIZE'?'response_size':code==='UPSTREAM_TIMEOUT'?'timeout':'connection';
-  const messages:Record<string,string>={authentication:'上游鉴权失败，请检查该题库源的Token或API Key',rate_limit:'上游限流或额度限制（HTTP 429）',http:`上游返回HTTP ${status??'错误'}，重定向不会自动跟随`,response_format:'上游返回的不是有效JSON，请核对接口地址',dns:'DNS解析失败，请检查域名',tls:'HTTPS证书或TLS连接失败',address:'上游地址格式无效或协议不受支持',response_size:'上游响应超过1MB限制',timeout:'上游请求超时，请检查网络与超时配置',connection:'无法完成上游请求，请检查地址、端口及网络'};
-  report.status='failed';report.failureCode=failure;if(status){report.httpStatus=status;report.reachable=true;}
-  steps.push({stage:'request',status:'failed',code:failure,message:messages[failure],...(status?{httpStatus:status}:{})});
+  const failure=providerFailure(e);
+  report.status='failed';report.failureCode=failure.code;if(failure.httpStatus){report.httpStatus=failure.httpStatus;report.reachable=true;}
+  steps.push({status:'failed',...failure});
  }finally{
   report.durationMs=Date.now()-started;report.reachable=report.reachable||received;
   logEvent(report.status==='failed'?'provider-test':'provider.test.completed',{providerId:provider.id,providerName:provider.name,kind:provider.kind,model:provider.kind==='ai'?provider.config.model:undefined,status:report.status,failureCode:report.failureCode,httpStatus:report.httpStatus,durationMs:report.durationMs,answer:report.answer,steps:report.steps,diagnostics},report.status==='failed'?'warn':'info',provider.config);

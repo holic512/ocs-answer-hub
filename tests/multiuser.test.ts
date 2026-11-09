@@ -31,7 +31,7 @@ test('multi-user authorization, shared atomic quota, tokens and session revocati
   });
   await t.test('RPM is atomic across independent database clients; failed token debit rolls back user debit',async()=>{
    await pool.query('UPDATE administrators SET daily_limit=100,rpm=3,minute_count=0 WHERE id=$1',[id]);
-   const results=await Promise.allSettled(Array.from({length:20},()=>reserveQuery(pool,'rpm',{userId:id})));assert.equal(results.filter(r=>r.status==='fulfilled').length,3);
+   const results=await Promise.allSettled(Array.from({length:20},()=>reserveQuery(pool,{title:'rpm'},{userId:id})));assert.equal(results.filter(r=>r.status==='fulfilled').length,3);
    await pool.query('UPDATE administrators SET rpm=600,minute_count=0 WHERE id=$1',[id]);await pool.query('UPDATE api_tokens SET revoked=true WHERE id=$1',[token.id]);
    const before=(await pool.query('SELECT day_count FROM administrators WHERE id=$1',[id])).rows[0].day_count;
    assert.equal((await app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${token.token}`},payload:q})).statusCode,401);
