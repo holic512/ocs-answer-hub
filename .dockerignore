@@ -9,6 +9,8 @@
 !prisma/**
 !server
 !server/**
+!shared
+!shared/**
 !web
 !web/**
 !deploy
