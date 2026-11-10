@@ -9,6 +9,7 @@ FROM dependencies AS build
 COPY prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 COPY server ./server
+COPY shared ./shared
 COPY web ./web
 COPY tsconfig.json tsconfig.server.json vite.config.ts ./
 RUN npm run build
