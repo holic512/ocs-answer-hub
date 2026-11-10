@@ -1,0 +1,2 @@
+import {AlertCircle,CheckCircle2,LoaderCircle} from 'lucide-react';
+export function Feedback({error,message,loading}:{error?:string;message?:string;loading?:boolean}){return <>{error&&<div className="feedback feedback-error" role="alert"><AlertCircle size={17}/><span>{error}</span></div>}{message&&<div className="feedback feedback-success" role="status"><CheckCircle2 size={17}/><span>{message}</span></div>}{loading&&<p className="loading-inline" role="status"><LoaderCircle size={16} className="spin"/>正在读取…</p>}</>;}

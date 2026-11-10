@@ -1,35 +1,25 @@
 /**
  * @file AppLayout.tsx
  * @project ocs-answer-hub
- * @module 后台布局
- * @description 后台公共导航、主内容出口、账号操作与版本。
- * @logic 路由决定导航选中态，业务页面渲染到唯一主内容区域。
- * @dependencies react-router, context/app, components/ui
- * @index_tags layout, navigation
+ * @module 工作台布局
+ * @description 分离个人工作台、系统管理和运维导航，统一主题和页面反馈。
+ * @logic 权限决定管理分组可见性，路由内容渲染到唯一主区域。
+ * @dependencies react-router, lucide-react, context/app
+ * @index_tags layout, navigation, roles
  * @author holic512
  */
 import {useEffect,useRef,useState} from 'react';
 import {Link,NavLink,Outlet,useLocation} from 'react-router';
-import {History,Moon,Sun} from 'lucide-react';
+import {Search,History,KeyRound,Coins,Settings,LayoutDashboard,BookOpen,Users,BrainCircuit,Sparkles,Database,CalendarClock,Activity,SlidersHorizontal,Moon,Sun,LogOut,type LucideIcon} from 'lucide-react';
 import {Button} from '../components/ui/button';
-import {Icon} from '../components/workspace';
 import {useApp} from '../context/app';
-const navigation=[['query','查题工作台'],['history','查询记录'],['overview','概览'],['questions','本地题库'],['providers','检索来源'],['users','用户管理'],['jobs','AI 题库任务'],['tokens','OCS 接入'],['settings','安全设置']];
+type Navigation={title:string;admin?:boolean;links:[string,string,LucideIcon][]};
+const groups:Navigation[]=[{title:'工作台',links:[['query','查题工作台',Search],['history','我的查询',History],['tokens','调用凭证',KeyRound],['credits','积分账本',Coins],['settings','账号安全',Settings]]},{title:'管理',admin:true,links:[['overview','系统概览',LayoutDashboard],['users','用户管理',Users],['questions','本地题库',BookOpen],['providers','AI 配置',BrainCircuit],['iteration','题库迭代',Sparkles],['admin-history','全部查询',History],['system-settings','系统设置',SlidersHorizontal]]},{title:'运维',admin:true,links:[['vector','向量索引',Database],['schedules','自动化任务',CalendarClock],['executions','执行记录',Activity]]}];
 export default function AppLayout(){
  const [theme,setTheme]=useState(()=>localStorage.getItem('theme')??'light');
  useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('theme',theme);},[theme]);
- const {user,error,notice,clearError,run,logout}=useApp();const location=useLocation();const main=useRef<HTMLElement>(null);
+ const {user,error,notice,clearError,run,logout}=useApp(),location=useLocation(),main=useRef<HTMLElement>(null);
  useEffect(()=>{clearError();main.current?.focus();window.scrollTo(0,0);},[location.pathname]);
- return <div className="app-layout">
-  <a className="skip-link" href="#main">跳到主要内容</a>
-  <aside className="sidebar">
-   <Link className="brand" to="/query" aria-label="知序首页"><span className="brand-symbol">知</span><span className="brand-name">知序</span></Link>
-   <nav className="app-nav" aria-label="主导航">{navigation.filter(([id])=>user?.role==='admin'||['query','history','settings'].includes(id)).map(([id,label])=><NavLink key={id} to={`/${id}`} aria-label={label} title={label}>{id==='history'?<History size={20}/>:<Icon name={id}/>}<span>{label}</span></NavLink>)}</nav>
-   <div className="sidebar-bottom"><Button className="theme-toggle" onClick={()=>setTheme(theme==='dark'?'light':'dark')} aria-label={theme==='dark'?'切换浅色主题':'切换深色主题'}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}<span>{theme==='dark'?'浅色主题':'深色主题'}</span></Button><Button className="user-row" aria-label={`退出登录（${user?.username}）`} title="退出登录" onClick={()=>run(logout)}><span className="avatar">{user?.username.slice(0,1).toUpperCase()}</span><span className="user-info">{user?.username}<small>退出登录</small></span><Icon name="logout" size={18}/></Button></div>
-  </aside>
-  <div className="app-body"><main className="app-main" id="main" ref={main} tabIndex={-1}>
-   {error&&<div className="error dismiss" role="alert">{error}<Button aria-label="关闭错误提示" onClick={clearError}>×</Button></div>}<Outlet/>
-  </main><footer className="app-footer">知序 v{__APP_VERSION__}</footer></div>
-  {notice&&<div className="toast" role="status"><Icon name="check" size={17}/>{notice}</div>}
- </div>;
+ const label=groups.flatMap(g=>g.links).find(([path])=>`/${path}`===location.pathname)?.[1]??'工作台';
+ return <div className="app-layout"><a className="skip-link" href="#main">跳到主要内容</a><aside className="sidebar"><Link className="brand" to="/query"><span className="brand-symbol">知</span><span className="brand-name">知序<span className="brand-caption">题库工作台</span></span></Link><nav className="app-nav" aria-label="主导航">{groups.filter(g=>!g.admin||user?.role==='admin').map(g=><div className="nav-group" key={g.title}><p>{g.title}</p>{g.links.map(([path,text,Icon])=><NavLink to={`/${path}`} key={path}><Icon size={17}/><span>{text}</span></NavLink>)}</div>)}</nav><div className="sidebar-bottom"><Button className="theme-toggle" onClick={()=>setTheme(theme==='dark'?'light':'dark')}>{theme==='dark'?<Sun size={16}/>:<Moon size={16}/>}<span>{theme==='dark'?'浅色主题':'深色主题'}</span></Button><div className="user-row"><span className="avatar">{user?.username.slice(0,1).toUpperCase()}</span><span className="user-info">{user?.username}<small>{user?.role==='admin'?'管理员':'普通用户'}</small></span><Button size="icon" aria-label="退出登录" onClick={()=>run(logout)}><LogOut size={16}/></Button></div></div></aside><div className="app-body"><header className="workspace-header"><span>{label}</span><span className="muted">知序 v{__APP_VERSION__}</span></header><main className="app-main" id="main" ref={main} tabIndex={-1}>{error&&<div className="feedback feedback-error" role="alert"><span>{error}</span><Button onClick={clearError} size="sm">关闭</Button></div>}{notice&&<div className="feedback feedback-success" role="status">{notice}</div>}<Outlet/></main></div></div>;
 }

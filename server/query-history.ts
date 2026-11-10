@@ -13,13 +13,13 @@ import type pg from 'pg';
 import {z} from 'zod';
 import type {QuestionInput} from './search.js';
 
-const pageSize=30;
+
 const failedStatus="e.status IN ('miss','error','rejected')";
 const groupKey="coalesce(e.fingerprint,'legacy:'||e.title)";
-const eventColumns=`e.id::text AS id,e.user_id,u.username,e.token_id,t.name AS token_name,e.title,e.status,e.source,e.question_id,e.duration_ms,e.attempts,e.created_at,e.fingerprint,e.question_snapshot,e.request_id,e.query_id,e.failure_code`;
-const eventTables='query_events e LEFT JOIN administrators u ON u.id=e.user_id LEFT JOIN api_tokens t ON t.id=e.token_id';
+const eventColumns=`e.id::text AS id,e.user_id,u.username,e.token_id,coalesce(e.token_name,t.name) AS token_name,e.title,e.status,e.source,e.question_id,e.duration_ms,e.attempts,e.created_at,e.fingerprint,e.question_snapshot,e.request_id,e.query_id,e.failure_code`;
+const eventTables='query_events e LEFT JOIN users u ON u.id=e.user_id LEFT JOIN api_tokens t ON t.id=e.token_id';
 const dateInput=z.union([z.iso.date(),z.iso.datetime({offset:true})]);
-const filtersSchema=z.object({q:z.string().trim().max(8000).default(''),status:z.enum(['all','failed','hit','pending','miss','error','rejected']).default('all'),from:dateInput.optional(),to:dateInput.optional(),source:z.string().max(100).optional(),user_id:z.coerce.number().int().positive().max(2147483647).optional(),page:z.coerce.number().int().min(1).max(1000000).default(1),view:z.enum(['records','failures']).default('records'),group_key:z.string().max(8100).optional()}).refine(p=>!p.from||!p.to||dateBound(p.from)<=dateBound(p.to,true),{message:'开始时间不能晚于结束时间',path:['to']});
+const filtersSchema=z.object({q:z.string().trim().max(8000).default(''),status:z.enum(['all','failed','hit','pending','miss','error','rejected']).default('all'),from:dateInput.optional(),to:dateInput.optional(),source:z.string().max(100).optional(),user_id:z.coerce.number().int().positive().max(2147483647).optional(),page:z.coerce.number().int().min(1).max(1000000).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(30),view:z.enum(['records','failures']).default('records'),group_key:z.string().max(8100).optional()}).refine(p=>!p.from||!p.to||dateBound(p.from)<=dateBound(p.to,true),{message:'开始时间不能晚于结束时间',path:['to']});
 type Filters=z.infer<typeof filtersSchema>;
 
 export function questionSnapshot(input:QuestionInput){
@@ -31,7 +31,7 @@ export function registerQueryHistory(app:FastifyInstance,pool:pg.Pool){
   const prefix=`/api/${audience}/query-events`;
   app.get(prefix,async(req,reply)=>{
    reply.header('Cache-Control','no-store');
-   const p=filtersSchema.parse(req.query),base=filterWhere(p,audience==='workspace'?(req as any).admin.id:undefined);
+   const p=filtersSchema.parse(req.query),pageSize=p.pageSize,base=filterWhere(p,audience==='workspace'?req.actor.id:undefined);
    const conditions=[...base.conditions];
    if(p.view==='failures'||p.status==='failed')conditions.push(failedStatus);
    else if(p.status!=='all'){base.values.push(p.status);conditions.push(`e.status=$${base.values.length}`);}
@@ -48,7 +48,7 @@ export function registerQueryHistory(app:FastifyInstance,pool:pg.Pool){
   });
   app.get(`${prefix}/export`,async(req,reply)=>{
    reply.header('Cache-Control','no-store');
-   const p=filtersSchema.parse(req.query),where=filterWhere(p,audience==='workspace'?(req as any).admin.id:undefined);
+   const p=filtersSchema.parse(req.query),where=filterWhere(p,audience==='workspace'?req.actor.id:undefined);
    const rows=(await pool.query(`SELECT ${eventColumns} FROM ${eventTables} WHERE ${where.conditions.join(' AND ')} AND ${failedStatus} ORDER BY e.created_at DESC,e.id DESC`,where.values)).rows;
    const groups=new Map<string,{group_key:string;title:string;approximate:boolean;failure_count:number;first_failure:Date;last_failure:Date;events:ReturnType<typeof eventView>[]}>();
    for(const row of rows){const event=eventView(row);let group=groups.get(event.group_key);if(!group){group={group_key:event.group_key,title:row.title,approximate:event.approximate,failure_count:0,first_failure:row.created_at,last_failure:row.created_at,events:[]};groups.set(event.group_key,group);}group.failure_count++;group.first_failure=row.created_at;group.events.push(event);}
@@ -56,7 +56,7 @@ export function registerQueryHistory(app:FastifyInstance,pool:pg.Pool){
   });
   app.get<{Params:{id:string}}>(`${prefix}/:id`,async(req,reply)=>{
    reply.header('Cache-Control','no-store');
-   const id=z.string().regex(/^[1-9]\d{0,18}$/).transform(BigInt).pipe(z.bigint().max(9223372036854775807n)).transform(String).parse(req.params.id),userId=audience==='workspace'?(req as any).admin.id:undefined;
+   const id=z.string().regex(/^[1-9]\d{0,18}$/).transform(BigInt).pipe(z.bigint().max(9223372036854775807n)).transform(String).parse(req.params.id),userId=audience==='workspace'?req.actor.id:undefined;
    const row=(await pool.query(`SELECT ${eventColumns} FROM ${eventTables} WHERE e.id=$1${userId===undefined?'':' AND e.user_id=$2'}`,[id,...(userId===undefined?[]:[userId])])).rows[0];
    if(!row)throw Object.assign(new Error('查题记录不存在'),{statusCode:404});
    return {item:eventView(row)};

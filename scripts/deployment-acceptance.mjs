@@ -65,7 +65,7 @@ try{
  operations(['install','--no-pull']);assert.equal(hash('config/config.env'),installedConfig);
  operations(['check']);operations(['status']);operations(['logs','--tail','5']);
  const upstream=project+'-upstream';
- docker(['run','-d','--rm','--name',upstream,'--network',network,'--network-alias','local-upstream','--entrypoint','node',image,'-e',"require('http').createServer((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answer:'private-network-fixture'}));}).listen(8080,'0.0.0.0')"]);upstreamCreated=true;
+ docker(['run','-d','--rm','--name',upstream,'--network',network,'--network-alias','local-upstream','--entrypoint','node',image,'-e',"require('http').createServer((_req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify({answer:'private-network-fixture',choices:[{message:{content:'{\"answer\":\"选项外答案\"}'},finish_reason:'stop'}]}));}).listen(8080,'0.0.0.0')"]);upstreamCreated=true;
  const internalAnswer=compose(['exec','-T','app','node','--input-type=module','-e',"import {safeRequest} from './dist/server/security.js';console.log(JSON.stringify(await safeRequest('http://local-upstream:8080/query','GET',{},null,5000)))"]);
  assert.equal(JSON.parse(internalAnswer).answer,'private-network-fixture');
  steps.push('容器内通过内网主机名直接请求真实 HTTP 上游，无需白名单或网段授权');
@@ -87,7 +87,7 @@ try{
  const headers={origin:'https://first.example.com','Content-Type':'application/json'};
  const login=await fetch('http://127.0.0.1:18771/api/login',{method:'POST',headers,body:JSON.stringify({username:'deployment-admin',password:'setup-fixture-password'})});
  const session=await login.json();
- const tested=await fetch('http://127.0.0.1:18771/api/admin/providers/test',{method:'POST',headers:{...headers,cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf},body:JSON.stringify({provider:{name:'deployment-diagnostics-fixture',kind:'http',config:{url:'http://local-upstream:8080/query',answerPath:'answer'}},question:{title:'1+2',type:'single',options:['2','3']}})});
+ const tested=await fetch('http://127.0.0.1:18771/api/admin/providers/test',{method:'POST',headers:{...headers,cookie:login.headers.get('set-cookie').split(';')[0],'X-CSRF-Token':session.csrf},body:JSON.stringify({provider:{name:'deployment-diagnostics-fixture',kind:'ai',config:{baseUrl:'http://local-upstream:8080/v1',apiKey:'deployment-probe-key',model:'fixture-model',apiFormat:'chat'}},question:{title:'1+2',type:'single',options:['2','3']}})});
  console.log(JSON.stringify(await tested.json()));`]);
  const tested=JSON.parse(probeLog);assert.equal(tested.failureCode,'answer_mismatch');assert(tested.requestId);
  const records=persistedLog().split('\n').filter(Boolean).map(line=>JSON.parse(line));
@@ -135,7 +135,7 @@ try{
  steps.push('无效配置在启动前被拒绝，错误输出不包含配置密码');
  operations(['stop']);const stoppedId=compose(['ps','--all','-q','app']);assert.equal(JSON.parse(docker(['inspect',stoppedId]))[0].State.Running,false);
  operations(['start']);await healthy();assert.equal(hash('storage/master.key'),key);
- assert.equal(setupStatus().required,false);assert.equal(docker(['exec',postgres,'psql','-U','postgres','-d','answer_hub','-tAc','SELECT username FROM administrators WHERE id=1']),'deployment-admin');
+ assert.equal(setupStatus().required,false);assert.equal(docker(['exec',postgres,'psql','-U','postgres','-d','answer_hub','-tAc',"SELECT username FROM users WHERE username='deployment-admin'"]),'deployment-admin');
  steps.push('Python 运维 install/start/restart/update/stop/status/logs/check 均通过；安装更新使用已有本地镜像，未测试远程拉取');
  console.log(JSON.stringify({passed:true,scope:'本地真实 Docker Compose、独立 PostgreSQL、宿主机目录绑定；升级使用本地模拟新版镜像，未发布 GHCR',steps},null,2));
 }finally{

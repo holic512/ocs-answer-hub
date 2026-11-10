@@ -10,9 +10,9 @@
  */
 let csrf='';
 export function setCsrf(value:string){csrf=value;}
-export async function api(url:string,method='GET',body?:unknown){
+export async function api<T=unknown>(url:string,method='GET',body?:unknown):Promise<T>{
  const response=await fetch(`/api${url}`,{method,headers:{'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
  const data=await response.json();
- if(!response.ok){const requestId=data.requestId??response.headers.get('X-Request-ID');const message=data.error??`请求失败 ${response.status}`;throw Object.assign(new Error(requestId?`${message}（请求编号：${requestId}）`:message),{status:response.status,requestId});}
+ if(!response.ok){const requestId=data.requestId??response.headers.get('X-Request-ID');const message=data.error??`请求失败 ${response.status}`;throw Object.assign(new Error(requestId?`${message}（请求编号：${requestId}）`:message),{status:response.status,requestId,fields:data.fields});}
  return data;
 }

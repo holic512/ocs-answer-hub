@@ -1,21 +1,53 @@
-import {Select} from '../components/ui/select';
+import type {Page} from '../../../shared/contracts';
+import type {Token,Setup,TokenCreated,TokenDefaults,TokenWrite} from '../../../shared/api-types';
 /**
  * @file TokensPage.tsx
  * @project ocs-answer-hub
- * @module OCS 接入
- * @description 管理工作台OCS 接入页面。
- * @logic 通过共享会话与请求模块完成页面操作，业务状态由页面维护。
- * @dependencies React, components/ui, context/app, lib/api
- * @index_tags tokens, page
+ * @module 调用凭证
+ * @description 个人凭证及管理员代管凭证的分页 CRUD、撤销和一次性密钥展示。
+ * @logic 用户受系统限额上限约束；管理员可设置用户凭证，删除保留调用历史。
+ * @dependencies react-hook-form, zod, hooks/use-resource, components/ui
+ * @index_tags tokens, ocs, form
  * @author holic512
  */
-import { useEffect,useState } from 'react';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
-import { Modal } from '../components/ui/dialog';
-import { Input,Textarea } from '../components/ui/input';
-import { Empty,Field,Heading,Icon } from '../components/workspace';
-import { api } from '../lib/api';
-import { date,download } from '../lib/format';
-import { useApp } from '../context/app';
-export default function TokensPage(){const {run,notify,confirm}=useApp();const[users,setUsers]=useState<any[]>([]),[items,setItems]=useState<any[]>([]),[modal,setModal]=useState(false),[created,setCreated]=useState<any>(null);const load=()=>run(async()=>setItems((await api('/admin/tokens')).items));useEffect(()=>{load();void run(async()=>setUsers((await api('/admin/users')).items));},[]);const copy=async(text:string)=>{await navigator.clipboard.writeText(text);notify('已复制')};return <><Heading title="OCS 接入" desc="为你的看课软件创建独立凭证。上游题库与 AI 密钥不会出现在配置中。"><Button className="primary" onClick={()=>setModal(true)}><Icon name="plus" size={16}/>创建调用凭证</Button></Heading><div className="connect-steps">{[{n:'01',title:'创建凭证',text:'为 OCS 设置调用频率与每日额度'},{n:'02',title:'复制配置',text:'创建后一次性复制题库 JSON'},{n:'03',title:'粘贴到 OCS',text:'在题库设置添加，并允许域名访问'}].map(s=><div key={s.n}><span>{s.n}</span><div><strong>{s.title}</strong><p>{s.text}</p></div></div>)}</div><section className="card"><div className="card-title"><div><h2>调用凭证</h2><p>明文仅创建时展示；遗失后请撤销并重新生成。</p></div><Badge tone="gray">{items.length} 个凭证</Badge></div>{items.length?<div className="table-scroll"><table><thead><tr><th>名称 / 标识</th><th>归属用户</th><th>状态</th><th>每日额度</th><th>每分钟</th><th>最近使用</th><th>操作</th></tr></thead><tbody>{items.map(r=><tr key={r.id}><td><strong>{r.name}</strong><small className="mono block">{r.prefix}…</small></td><td>{users.find(u=>u.id===r.user_id)?.username??r.user_id}</td><td><Badge tone={r.revoked?'gray':'green'}>{r.revoked?'已撤销':'有效'}</Badge></td><td>{new Date(r.usage_day).toDateString()===new Date().toDateString()?r.day_count:0} / {r.daily_limit}</td><td>{r.rpm} 次</td><td>{date(r.last_used)}</td><td><Button className="danger-text text-button" disabled={r.revoked} onClick={async()=>{if(await confirm('撤销后，使用该配置的 OCS 将无法查题，确定继续？'))run(async()=>{await api(`/admin/tokens/${r.id}/revoke`,'POST',{});load();notify('凭证已撤销')})}}>撤销</Button></td></tr>)}</tbody></table></div>:<Empty text="连接你的 OCS" detail="创建第一个凭证后，会生成可直接粘贴的题库配置。"/>}</section><div className="notice neutral"><Icon name="shield"/><div><strong>请允许脚本访问 {location.hostname}</strong><p>在油猴脚本的 @connect 添加此域名，或在官方全域名通用版本中允许该域名请求。HTTPS 可访问不代表脚本权限已允许。</p></div></div>{modal&&<Modal title="创建调用凭证" onClose={()=>setModal(false)}><form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(async()=>{const r=await api('/admin/tokens','POST',{name:f.get('name'),user_id:Number(f.get('user_id')),daily_limit:Number(f.get('daily')),rpm:Number(f.get('rpm')),...(f.get('expires')?{expires_at:new Date(String(f.get('expires'))).toISOString()}:{expires_at:null})});setCreated(r);setModal(false);load()})}}><Field label="归属用户"><Select name="user_id" required>{users.filter(u=>!u.disabled).map(u=><option value={u.id} key={u.id}>{u.username}</option>)}</Select></Field><Field label="凭证名称"><Input name="name" defaultValue="我的 OCS" required/></Field><div className="form-grid"><Field label="每日调用上限"><Input type="number" name="daily" min="1" max="100000" defaultValue="2000"/></Field><Field label="每分钟上限"><Input type="number" name="rpm" min="1" max="600" defaultValue="60"/></Field></div><Field label="到期时间（可不填）"><Input type="datetime-local" name="expires"/></Field><Button className="primary full">生成凭证与 OCS 配置</Button></form></Modal>}{created&&<Modal title="凭证已创建 · 请立即保存" onClose={()=>setCreated(null)}><div className="notice"><Icon name="shield"/><p>仅本次展示明文。配置含调用凭证，请勿分享给他人。</p></div><Field label="调用凭证"><Input readOnly value={created.token}/></Field><Field label="OCS 题库配置"><Textarea rows={13} className="code-editor" readOnly value={JSON.stringify(created.config,null,2)}/></Field><div className="modal-actions"><Button className="secondary" onClick={()=>download('知序-OCS配置.json',created.config)}>下载配置</Button><Button className="primary" onClick={()=>run(()=>copy(JSON.stringify(created.config)))}>复制 OCS 配置</Button></div></Modal>}</>}
+import {useState} from 'react';
+import {useForm} from 'react-hook-form';
+import {zodResolver} from '@hookform/resolvers/zod';
+import {z} from 'zod';
+import {Plus,Copy,Download} from 'lucide-react';
+import {Button} from '../components/ui/button';
+import {Input,Textarea} from '../components/ui/input';
+import {Badge} from '../components/ui/badge';
+import {DataTable} from '../components/ui/data-table';
+import {Sheet} from '../components/ui/sheet';
+import {FormField,FormActions} from '../components/ui/form';
+import {Feedback} from '../components/ui/alert';
+import {Heading} from '../components/workspace';
+import {useApp} from '../context/app';
+import {useResource,useAction} from '../hooks/use-resource';
+import {api} from '../lib/api';
+import {date,download} from '../lib/format';
+const tokenSchema=z.object({name:z.string().trim().min(1,'请输入凭证名称').max(100),daily_limit:z.number().int().min(1).max(100000),rpm:z.number().int().min(1).max(600),expires_at:z.string()});
+type Values=z.infer<typeof tokenSchema>;
+export default function TokensPage(){return <><Heading title="调用凭证" desc="网页与 OCS 使用同一凭证限额。成功获得答案扣除账号 1 积分。"/><TokenManager/></>;}
+export function TokenManager({userId}:{userId?:number}){
+ const {confirm,setup}=useApp(),action=useAction();
+ const liveSettings=useResource<Setup>('/setup');const [page,setPage]=useState(1),[edit,setEdit]=useState<Partial<Token>|null>(null),[created,setCreated]=useState<TokenCreated|null>(null);
+ const base=userId?'/admin/tokens':'/workspace/tokens';
+ const resource=useResource<Page<Token>>(`${base}?page=${page}${userId?`&user_id=${userId}`:''}`);
+ const items=resource.data?.items??[];
+ async function mutate(row:Token,operation:'revoke'|'delete'){if(!await confirm(operation==='delete'?`删除凭证「${row.name}」？删除后立即失效，历史记录仍保留。`:`撤销凭证「${row.name}」？撤销后不可继续调用。`))return;await action.execute(async()=>{await api(`${base}/${row.id}${operation==='revoke'?'/revoke':''}`,operation==='delete'?'DELETE':'POST',operation==='revoke'?{}:undefined);await resource.reload();},operation==='delete'?'凭证已删除':'凭证已撤销');}
+ return <><div className="section-toolbar"><p className="muted">{userId?'为该用户管理调用凭证。':'密钥只在创建时显示，请及时保存 OCS 配置。'}</p><Button variant="default" onClick={()=>{action.clear();setEdit({});}}><Plus size={16}/>创建凭证</Button></div><Feedback error={resource.error||action.error} message={action.message}/><DataTable data={items} loading={resource.loading} total={resource.data?.total??0} page={page} pageSize={resource.data?.pageSize??30} onPageChange={setPage} columns={[
+ {accessorKey:'name',header:'名称',cell:({row})=><div><strong>{row.original.name}</strong><small className="block muted mono">{row.original.prefix}…</small></div>},
+ {id:'status',header:'状态',cell:({row})=>{const r=row.original,expired=r.expires_at&&new Date(r.expires_at)<new Date();return <Badge tone={r.revoked||expired?'gray':'green'}>{r.revoked?'已撤销':expired?'已过期':'有效'}</Badge>;}},
+ {id:'quota',header:'凭证限额',cell:({row})=><span>每日 {row.original.daily_limit.toLocaleString()}<small className="block muted">每分钟 {row.original.rpm} 次</small></span>},
+ {accessorKey:'day_count',header:'今日用量',cell:({row})=>row.original.day_count},
+ {accessorKey:'expires_at',header:'到期 / 最近调用',cell:({row})=><span>{row.original.expires_at?date(row.original.expires_at):'长期有效'}<small className="block muted">{date(row.original.last_used)}</small></span>},
+ {id:'actions',header:'操作',cell:({row})=><div className="row-actions"><Button size="sm" onClick={()=>{action.clear();setEdit(row.original);}}>编辑</Button>{!row.original.revoked&&<Button size="sm" disabled={action.pending} onClick={()=>mutate(row.original,'revoke')}>撤销</Button>}<Button size="sm" className="danger-text" disabled={action.pending} onClick={()=>mutate(row.original,'delete')}>删除</Button></div>}
+ ]}/>{edit&&<Sheet title={edit.id?'编辑凭证':'创建调用凭证'} onClose={()=>setEdit(null)}><TokenForm item={edit} administrator={Boolean(userId)} defaults={liveSettings.data?.tokenDefaults??setup.tokenDefaults} onCancel={()=>setEdit(null)} onSave={async(values)=>{const result=await api<TokenCreated>(edit.id?`${base}/${edit.id}`:base,edit.id?'PUT':'POST',{...values,...(userId?{user_id:userId}:{})});await resource.reload();setEdit(null);if(result.token)setCreated(result);}}/></Sheet>}{created&&<Sheet title="凭证已创建" description="密钥仅展示这一次，关闭前请复制或下载配置。" onClose={()=>setCreated(null)}><FormField label="调用密钥"><Input readOnly value={created.token}/></FormField><FormField label="OCS 配置"><Textarea readOnly className="code-editor" rows={16} value={JSON.stringify(created.config,null,2)}/></FormField><Feedback error={action.error} message={action.message}/><FormActions><Button variant="outline" onClick={()=>download('知序-OCS配置.json',created.config)}><Download size={16}/>下载配置</Button><Button variant="default" onClick={()=>action.execute(()=>navigator.clipboard.writeText(JSON.stringify(created.config)),'OCS 配置已复制')}><Copy size={16}/>复制配置</Button></FormActions></Sheet>}</>;
+}
+function TokenForm({item,defaults,administrator,onSave,onCancel}:{item:Partial<Token>;defaults:TokenDefaults;administrator:boolean;onSave:(data:TokenWrite)=>Promise<void>;onCancel:()=>void}){
+ const action=useAction(),form=useForm<Values>({resolver:zodResolver(tokenSchema),defaultValues:{name:item.name??'',daily_limit:item.daily_limit??defaults?.daily_limit??2000,rpm:item.rpm??defaults?.rpm??60,expires_at:item.expires_at?new Date(new Date(item.expires_at).getTime()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16):''}});
+ const dailyMax=administrator?100000:defaults?.max_daily_limit??2000,rpmMax=administrator?600:defaults?.max_rpm??60;
+ return <form onSubmit={form.handleSubmit(data=>action.execute(async()=>{if(data.daily_limit>dailyMax){form.setError('daily_limit',{message:`不可超过 ${dailyMax} 次`});return;}if(data.rpm>rpmMax){form.setError('rpm',{message:`不可超过 ${rpmMax} 次`});return;}await onSave({...data,expires_at:data.expires_at?new Date(data.expires_at).toISOString():null});}))}><FormField label="凭证名称" error={form.formState.errors.name?.message}><Input {...form.register('name')}/></FormField><div className="form-grid"><FormField label="每日调用上限" hint={`最多 ${dailyMax.toLocaleString()} 次`} error={form.formState.errors.daily_limit?.message}><Input type="number" min={1} max={dailyMax} {...form.register('daily_limit',{valueAsNumber:true})}/></FormField><FormField label="每分钟调用上限" hint={`最多 ${rpmMax} 次`} error={form.formState.errors.rpm?.message}><Input type="number" min={1} max={rpmMax} {...form.register('rpm',{valueAsNumber:true})}/></FormField></div><FormField label="到期时间" hint="留空表示长期有效。" error={form.formState.errors.expires_at?.message}><Input type="datetime-local" {...form.register('expires_at')}/></FormField><Feedback error={action.error}/><FormActions><Button type="button" variant="outline" onClick={onCancel}>取消</Button><Button variant="default" disabled={action.pending}>{action.pending?'保存中…':'保存凭证'}</Button></FormActions></form>;
+}

@@ -2,7 +2,7 @@
 name: ocs-answer-hub-local
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:0.8.2-pg17
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:?请先运行 node scripts/setup-local.mjs 并填写 DB_USER}

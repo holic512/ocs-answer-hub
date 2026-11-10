@@ -1,89 +1,38 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';import {buildApp,ocsConfig} from '../server/app.js';import {createPool} from '../server/db.js';import {prepare} from '../server/search.js';import {verifyPassword} from '../server/security.js';
-import os from 'node:os';import path from 'node:path';import {createTestDatabase} from './support/test-database.js';
-test('real PostgreSQL: auth, priority fallback, cache, conflict, OCS and restart',{timeout:120000},async(t)=>{
- const database=await createTestDatabase();const url=database.url;
- const pool=createPool(url);t.after(async()=>{await pool.end();await database.close();});
- const logs:Array<{event:string;data:any}>=[];
- for(const method of ['info','warn','error'] as const)t.mock.method(console,method,(event:unknown,data:unknown)=>{if(typeof event==='string'&&typeof data==='string'){try{logs.push({event:event.slice(1,-1),data:JSON.parse(data)});}catch{}}});
- const state=await fs.mkdtemp(path.join(os.tmpdir(),'answer-hub-integration-'));t.after(()=>fs.rm(state,{recursive:true,force:true}));
- // This isolated database was created exclusively for automated acceptance.
- await pool.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
- const calls:string[]=[];let mode='fallback';
- const transport:any=async(u:string,_m:any,_h:any,b:any)=>{calls.push(u);if(u.includes('first'))return {code:0};if(u.includes('second'))return mode==='ai'?{code:0}:{code:1,data:{answer:'B',question:b.title}};return {choices:[{message:{content:'{"answer":"3"}'}}],usage:{total_tokens:12}};};
- let built=await buildApp({databaseUrl:url,pool,origin:'http://127.0.0.1:18771',stateDir:state,transport,test:true});let app=built.app;await app.ready();
- const origin='http://127.0.0.1:18771';let session='',csrf='';
- const req=async(method:string,url:string,payload?:any,auth=true)=>app.inject({method:method as any,url,headers:{origin,...(auth?{cookie:session,'x-csrf-token':csrf}:{})},...(payload!==undefined?{payload}:{})});
- const login=async(password:string)=>{const r=await req('POST','/api/login',{username:'owner-test',password},false);assert.equal(r.statusCode,200,r.body);session=r.headers['set-cookie']!.toString().split(';')[0];csrf=r.json().csrf;return r.json();};
- let token='',providerIds:string[]=[];const q={title:'集成测试 1+2等于几',type:'single',options:'A. 2\nB. 3'};
- await t.test('empty database requires one-time setup, then custom login, CSRF and password changes work',async()=>{
-  assert.equal((await pool.query('SELECT count(*) FROM administrators')).rows[0].count,'0');
-  await assert.rejects(fs.access(state+'/bootstrap-admin.json'));
-  const status=await req('GET','/api/setup',undefined,false);assert.equal(status.json().required,true);assert.equal(status.headers['cache-control'],'no-store');
-  assert.equal((await req('GET','/api/admin/questions',undefined,false)).statusCode,401);
-  assert.equal((await req('POST','/api/login',{username:'owner-test',password:'setup827'},false)).statusCode,409);
-  const setup={username:'  owner-test  ',password:'setup827',confirmPassword:'setup827'};
-  assert.equal((await app.inject({method:'POST',url:'/api/setup',headers:{origin:'https://other.example'},payload:setup})).statusCode,403);
-  assert.equal((await req('POST','/api/setup',{...setup,password:'short77',confirmPassword:'short77'},false)).statusCode,400);
-  assert.equal((await req('POST','/api/setup',{...setup,confirmPassword:'mismatch'},false)).statusCode,400);
-  const created=await req('POST','/api/setup',setup,false);assert.equal(created.statusCode,201,created.body);assert.equal(created.json().username,'owner-test');
-  assert.equal((await req('GET','/api/setup',undefined,false)).json().required,false);
-  const stored=(await pool.query('SELECT * FROM administrators WHERE id=1')).rows[0];assert.equal(stored.must_change,false);assert.notEqual(stored.password_hash,setup.password);assert(await verifyPassword(setup.password,stored.password_hash));
-  assert.equal((await req('POST','/api/setup',{username:'replacement',password:'replacement123',confirmPassword:'replacement123'},false)).statusCode,409);
-  assert.equal((await pool.query('SELECT password_hash FROM administrators WHERE id=1')).rows[0].password_hash,stored.password_hash);
-  assert.equal((await login('setup827')).mustChange,false);assert.equal((await req('GET','/api/admin/providers')).statusCode,200);
-  const bad=await app.inject({method:'POST',url:'/api/admin/password',headers:{cookie:session,origin},payload:{oldPassword:'setup827',newPassword:'integration-new-password'}});assert.equal(bad.statusCode,403);
-  assert.equal((await req('POST','/api/admin/password',{oldPassword:'setup827',newPassword:'short77'})).statusCode,400);
-  assert.equal((await req('POST','/api/admin/password',{oldPassword:'setup827',newPassword:'study827'})).statusCode,200);
-  assert.equal((await req('GET','/api/admin/me')).statusCode,401);assert.equal((await login('study827')).mustChange,false);
- });
- await t.test('three sources and secret encryption / masking',async()=>{for(const [i,name]of ['first','second','ai'].entries()){const isAI=name==='ai';const r=await req('POST','/api/admin/providers',{name,kind:isAI?'ai':'http',enabled:true,priority:i+1,timeout_ms:1000,config:isAI?{baseUrl:'https://ai.example.com/v1',apiKey:'secret-test-key',model:'test'}:{url:`https://${name}.example.com/query`,answerPath:'data.answer',questionPath:'data.question',successPath:'code',successValue:1}});assert.equal(r.statusCode,201,r.body);providerIds.push(r.json().id);}const r=await req('GET','/api/admin/providers');assert.equal(r.json().items[2].config.apiKey,'********');const stored=(await pool.query("SELECT config_cipher FROM providers WHERE name='ai'")).rows[0].config_cipher;assert(!stored.includes('secret-test-key'));});
- await t.test('OCS token, fallback stops after second, next reordered query hits local',async()=>{const r=await req('POST','/api/admin/tokens',{name:'integration',daily_limit:100,rpm:60});assert.equal(r.statusCode,201);token=r.json().token;assert(!r.json().config[0].handler.includes('secret-test-key'));const ocs=async(input:any)=>app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${token}`},payload:input});assert.equal((await ocs({...q,token:'bad'})).statusCode,200);assert.equal(calls.length,2);assert(calls[0].includes('first'));assert(calls[1].includes('second'));const next=await ocs({...q,options:'A. 3\nB. 2'});assert.equal(next.json().source,'本地题库');assert.equal(next.json().answer,'3');assert.equal(calls.length,2);const wrapper=ocsConfig(origin,token)[0];const parsed=new Function(wrapper.handler)()(next.json());assert.deepEqual(parsed,[q.title,'3']);});
- await t.test('all third parties miss then AI answers and saves as unverified',async()=>{mode='ai';calls.length=0;const r=await req('POST','/api/admin/query',{...q,title:'AI测试 1+2等于几'});assert.equal(r.json().code,1,r.body);assert.equal(calls.length,3);assert.equal(r.json().source,'ai');const row=(await pool.query("SELECT * FROM questions WHERE title=$1",['AI测试 1+2等于几'])).rows[0];assert.equal(row.verified,false);assert(row.source.includes('AI'));calls.length=0;assert.equal((await req('POST','/api/admin/query',{...q,title:row.title})).json().source,'本地题库');assert.equal(calls.length,0);});
- await t.test('manual answers, conflict history, correction and statistics',async()=>{const q2=prepare({...q,title:'冲突题'});await built.engine.store(q2,'2','source one');const r=await built.engine.store(q2,'3','source two');assert.equal(r.conflict,true);assert.equal(await built.engine.local(q2),null);await built.engine.store(q2,'3','人工纠错',true);assert.equal((await built.engine.local(q2)).verified,true);assert.equal((await pool.query('SELECT count(*) FROM answer_versions WHERE question_id=$1',[r.id])).rows[0].count,'3');const stats=(await req('GET','/api/admin/stats')).json();assert(stats.totals.requests>=4);assert(stats.questions.total>=3);});
- await t.test('reorder, single-flight, different-question concurrency and invalid response persistence',async()=>{await req('POST','/api/admin/providers/reorder',{ids:[providerIds[1],providerIds[0],providerIds[2]]});mode='fallback';calls.length=0;const results=await Promise.all([built.engine.query({...q,title:'并发题同一个'},null),built.engine.query({...q,title:'并发题同一个'},null)]);assert(results.every(x=>x.code===1));assert.equal(calls.length,1);assert(calls[0].includes('second'));calls.length=0;const different=await Promise.all([built.engine.query({...q,title:'并发不同题一'},null),built.engine.query({...q,title:'并发不同题二'},null)]);assert(different.every(x=>x.code===1));assert.equal(calls.length,2);assert(calls.every(x=>x.includes('second')));const observations=await pool.query('SELECT * FROM provider_observations');assert(observations.rowCount!>0);assert(observations.rows.some(x=>x.status==='no_valid_answer'));const activeToken=(await req('GET','/api/admin/tokens')).json();assert(activeToken.items.every((x:any)=>!x.hash&&!x.token));});
- await t.test('isolated saved and draft provider tests do not alter questions or usage',async()=>{mode='fallback';calls.length=0;const before=(await pool.query('SELECT (SELECT count(*) FROM questions) q,(SELECT count(*) FROM query_events) e,(SELECT count(*) FROM provider_observations) o,(SELECT count(*) FROM providers) p')).rows[0];
- const saved=await req('POST',`/api/admin/providers/${providerIds[1]}/test`,{question:q});assert.equal(saved.statusCode,200,saved.body);assert.equal(saved.json().status,'passed');assert.equal(saved.json().persisted,false);assert.equal(saved.json().answer,'3');assert.equal(calls.length,1);assert(calls[0].includes('second'));
- const draft={name:'临时HTTP源',kind:'http',enabled:false,timeout_ms:1000,config:{url:'http://second.example.com:8080/query',successPath:'code',successValue:1,answerPath:'data.answer',questionPath:'data.question'}};
- const r=await req('POST','/api/admin/providers/test',{provider:draft,question:q});assert.equal(r.statusCode,200,r.body);assert.equal(r.json().status,'passed');assert.equal(r.json().warnings.length,1);assert(calls.at(-1)!.startsWith('http:'));
- const ai=(await req('GET','/api/admin/providers')).json().items.find((x:any)=>x.kind==='ai');const masked=await req('POST',`/api/admin/providers/${ai.id}/test`,{provider:ai,question:q});assert.equal(masked.json().status,'passed');assert(!masked.body.includes('secret-test-key'));
- assert.equal((await req('POST','/api/admin/providers/test',{provider:draft},false)).statusCode,401);const csrfBad=await app.inject({method:'POST',url:'/api/admin/providers/test',headers:{origin,cookie:session},payload:{provider:draft}});assert.equal(csrfBad.statusCode,403);
- const after=(await pool.query('SELECT (SELECT count(*) FROM questions) q,(SELECT count(*) FROM query_events) e,(SELECT count(*) FROM provider_observations) o,(SELECT count(*) FROM providers) p')).rows[0];assert.deepEqual(after,before);
- const created=await req('POST','/api/admin/providers',draft);assert.equal(created.statusCode,201,created.body);const readback=(await req('GET','/api/admin/providers')).json().items.find((x:any)=>x.id===created.json().id);assert.equal(readback.config.url,draft.config.url);await req('DELETE',`/api/admin/providers/${created.json().id}`);
- });
- await t.test('quota, revoked token, local provider configuration and persistence',async()=>{const limited=(await req('POST','/api/admin/tokens',{name:'limited',daily_limit:1,rpm:1})).json();const invoke=()=>app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${limited.token}`},payload:q});assert.equal((await invoke()).statusCode,200);assert.equal((await invoke()).statusCode,429);await req('POST',`/api/admin/tokens/${limited.id}/revoke`,{});assert.equal((await invoke()).statusCode,401);const r=await req('POST','/api/admin/providers',{name:'local',kind:'http',config:{url:'http://127.0.0.1',answerPath:'answer'}});assert.equal(r.statusCode,201);
- const key=built.key;await app.close();built=await buildApp({databaseUrl:url,pool,origin,stateDir:state,transport,test:true});app=built.app;await app.ready();assert.equal(built.key,key);assert.equal((await built.engine.local(prepare(q))).answer,'3');assert.equal((await pool.query('SELECT count(*) FROM administrators')).rows[0].count,'1');assert.equal((await req('GET','/api/setup',undefined,false)).json().required,false);assert.equal((await pool.query('SELECT username FROM administrators WHERE id=1')).rows[0].username,'owner-test');await assert.rejects(fs.access(state+'/bootstrap-admin.json'));});
- await t.test('request traces link concurrent queries, administrative changes and rejected input without credentials',async()=>{
-  const responses=await Promise.all(['日志并发一','日志并发二'].map(title=>req('POST','/api/admin/query',{...q,title})));
-  for(const [index,response] of responses.entries()){
-   assert.equal(response.statusCode,200,response.body);
-   const requestId=response.headers['x-request-id'];assert.match(String(requestId),/^[a-f0-9-]{36}$/);
-   const trace=logs.filter(row=>row.data.requestId===requestId);
-   const started=trace.find(row=>row.event==='query.started')!;assert(started);assert.equal(started.data.question.title,index===0?'日志并发一':'日志并发二');
-   const finished=trace.find(row=>row.event==='query.completed')!;assert.equal(finished.data.queryId,started.data.queryId);assert.equal(finished.data.status,'hit');
-   assert(trace.some(row=>row.event==='question.stored'&&row.data.queryId===started.data.queryId&&row.data.questionId===finished.data.questionId));
-   assert(trace.some(row=>row.event==='provider.started'));assert(trace.some(row=>row.event==='http.request.completed'&&row.data.statusCode===200));
-  }
-  assert.notEqual(responses[0].headers['x-request-id'],responses[1].headers['x-request-id']);
-  const joined=logs.find(row=>row.event==='query.joined');assert(joined);assert(logs.some(row=>row.event==='query.started'&&row.data.queryId===joined.data.queryId));
-  const invalid=await req('POST','/api/admin/questions',{title:'invalid-fixture'});assert.equal(invalid.statusCode,400);
-  assert.equal(invalid.json().requestId,invalid.headers['x-request-id']);assert(logs.some(row=>row.event==='http.request.failed'&&row.data.requestId===invalid.json().requestId));
-  assert(logs.some(row=>row.event==='admin.action'&&row.data.route==='/api/admin/providers'&&row.data.result?.id===providerIds[0]));
-  assert(logs.some(row=>row.event==='auth.setup.completed'));assert(logs.some(row=>row.event==='auth.login.completed'));
-  const serialized=JSON.stringify(logs);for(const secret of ['setup827','study827','secret-test-key',token,csrf,session.split('=')[1]])assert(!serialized.includes(secret),secret);
- });
- await t.test('unexpected server failures log SQL error location and request ID without raw SQL or secrets',async(subtest)=>{
-  const original=pool.query.bind(pool);
-  const query=subtest.mock.method(pool,'query',((...args:any[])=>{
-   if(typeof args[0]==='string'&&args[0].includes('count(*)::int requests'))throw Object.assign(new Error('unsafe SQL password must not be logged'),{code:'XX000',detail:'raw SQL fixture must not be logged'});
-   return (original as any)(...args);
-  }) as any);
-  try{
-   const response=await req('GET','/api/admin/stats');assert.equal(response.statusCode,500);
-   assert.equal(response.json().requestId,response.headers['x-request-id']);
-   const failed=logs.find(row=>row.event==='http.request.failed'&&row.data.requestId===response.json().requestId)!;
-   assert(failed);assert.equal(failed.data.error.code,'XX000');assert(failed.data.error.frames.length>0);
-   assert(!JSON.stringify(logs).includes('unsafe SQL password'));assert(!JSON.stringify(logs).includes('raw SQL fixture'));
-  }finally{query.mock.restore();}
- });
- await app.close();
+import test from 'node:test';import assert from 'node:assert/strict';
+import {workspace} from './support/workspace.js';
+import {verifyPassword,decrypt} from '../server/security.js';
+import {prepare} from '../server/search.js';
+import {storeQuestion} from '../server/modules/questions.js';
+import {buildApp,ocsConfig} from '../server/app.js';
+
+test('workspace lifecycle: setup, registration, AI encryption, local accumulation, edits, OCS and restart',{timeout:120000},async t=>{
+ for(const name of ['info','warn','error'] as const)t.mock.method(console,name,()=>{});
+ let calls=0;const fixture=await workspace({transport:async()=>{calls++;return {choices:[{message:{content:'{"answer":"o2"}'}}]};}});
+ const {request,pool,engine}=fixture;
+ try{
+  assert.equal((await request('GET','/api/setup')).json().required,false);
+  assert.equal((await request('POST','/api/setup',{username:'new-admin',password:'password888',confirmPassword:'password888'})).statusCode,409);
+  const admin=(await pool.query('SELECT * FROM users')).rows[0];assert.equal(admin.balance,20);assert(await verifyPassword('password888',admin.password_hash));
+  const member=await fixture.signup('member');assert.equal((await request('GET','/api/admin/users',undefined,member.headers)).statusCode,403);
+  const thirdParty=await request('POST','/api/admin/providers',{name:'retired',kind:'http',config:{url:'https://example.com'}});assert.equal(thirdParty.statusCode,400);
+  const ai=await request('POST','/api/admin/providers',{name:'AI',kind:'ai',enabled:true,priority:1,timeout_ms:1000,config:{baseUrl:'https://fixture.example/v1',apiKey:'private-test-key',model:'fixture'}});assert.equal(ai.statusCode,201,ai.body);
+  const read=(await request('GET','/api/admin/providers')).json().items[0];assert.equal(read.config.apiKey,'');assert.equal(read.config.hasKey,true);
+  const cipher=(await pool.query('SELECT config_cipher FROM providers')).rows[0].config_cipher;assert(!cipher.includes('private-test-key'));assert.equal(decrypt(cipher,fixture.key).apiKey,'private-test-key');
+  assert.equal((await request('PUT',`/api/admin/providers/${read.id}`,read)).statusCode,200);
+  const credential=await fixture.token(),q={title:'集成题 1+2等于几',type:'single',options:['2','3']};
+  const result=await request('POST','/api/workspace/query',{...q,tokenId:credential.id});assert.equal(result.json().answer,'3',result.body);assert.equal(calls,1);assert.equal((await request('GET','/api/workspace/credits')).json().balance,19);
+  const local=await request('POST','/api/workspace/query',{...q,options:['3','2'],tokenId:credential.id});assert.equal(local.json().source,'本地题库');assert.equal(calls,1);
+  const row=await storeQuestion(pool,prepare(q),'2');assert.equal(row.answer,'3');assert.equal('verified' in row,false);assert.equal('source' in row,false);
+  assert.equal((await request('PUT',`/api/admin/questions/${row.id}`,{...q,answer:'2'})).statusCode,200);assert.equal((await engine.local(prepare(q)))?.answer,'2');
+  const versions=(await request('GET',`/api/admin/questions/${row.id}/versions`)).json().items;assert.equal(versions.length,2);assert.equal(versions[0].operation,'编辑题目');
+  const ocs=await fixture.app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${credential.token}`},payload:q});assert.equal(ocs.json().answer,'2');assert.deepEqual(new Function(ocsConfig(fixture.origin,credential.token)[0].handler)()(ocs.json()),[q.title,'2']);
+  const preview=await request('POST','/api/admin/import',{items:[{...q,answer:'3'}]});assert.equal(preview.json().valid,1);
+  await request('POST','/api/admin/import',{preview:false,items:[{...q,answer:'3'}]});assert.equal((await engine.local(prepare(q)))?.answer,'2');
+  await request('POST','/api/admin/import',{preview:false,overwrite:true,items:[{...q,answer:'3'}]});assert.equal((await engine.local(prepare(q)))?.answer,'3');
+  assert(!JSON.stringify((await request('GET','/api/admin/export')).json()).includes('verified'));
+  await request('DELETE',`/api/workspace/tokens/${credential.id}`);assert.equal((await fixture.app.inject({method:'POST',url:'/api/ocs/query',headers:{authorization:`Bearer ${credential.token}`},payload:q})).statusCode,401);
+  const history=(await request('GET','/api/workspace/query-events')).json();assert.equal(history.total,3);assert.equal(history.items[0].token_name,'Test credential');
+  const before=(await pool.query('SELECT balance FROM users WHERE id=$1',[admin.id])).rows[0].balance;
+  const peer=await buildApp({databaseUrl:fixture.database.url,origin:fixture.origin,stateDir:fixture.stateDir,test:true});assert.equal(peer.key,fixture.key);assert.equal((await peer.pool.query('SELECT balance FROM users WHERE id=$1',[admin.id])).rows[0].balance,before);await peer.app.close();
+ }finally{await fixture.close();}
 });

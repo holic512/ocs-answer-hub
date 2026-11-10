@@ -1,15 +1,15 @@
 # 知序 · OCS Answer Hub
 
-兼容 OCS 网课助手的个人题库，提供本地题库管理、第三方查题和 AI 答案查询。查询时先查本地，再按后台设置的顺序调用外部来源，有效答案自动保存到本地。
+面向桌面浏览器的单系统题库与学习工作台，兼容 OCS 网课助手。查询按本地精确、安全模糊、AI 顺序执行，支持个人凭证、积分记账、管理员管理及独立运维。
 
-技术栈：**Node.js 24 · TypeScript · Fastify · React / Vite · PostgreSQL 17 · Prisma**。服务器推荐使用 Docker 镜像安装，无需安装 Node.js。
+技术栈：**Node.js 24 · TypeScript · Fastify · React / Vite · shadcn/Radix · PostgreSQL 17 + pgvector · Prisma**。服务器推荐使用 Docker 镜像安装，无需安装 Node.js。
 
 ## 首次初始化（部署后第一步）
 
 **应用连接数据库后，如果数据库中没有管理员，会优先显示「初始化管理员」页面。自行设置账号、密码和确认密码，完成后登录。**
 
 - 管理员密码至少 8 个字符，不强制特殊符号；系统不自动生成管理员密码，也不生成明文密码文件。
-- 新账号无需再次强制改密。已有账号直接进入登录流程，重启、重建和升级不会覆盖账号。
+- 初始化及自行注册无需再次强制改密；管理员创建或重置的账号需先改密。忘记密码由管理员重置。
 - 旧版账号的数据及已有改密要求保持兼容。管理员登录密码与数据库密码是两套独立凭据。
 
 ## 导航
@@ -18,17 +18,19 @@
 
 ## 功能与边界
 
-- 管理本地题目，支持导入、导出、保守模糊匹配、答案版本和冲突记录。
-- 支持言溪、通用 HTTP 及 OpenAI 兼容接口；来源可排序、启停和单独测试，本地题库始终优先。
-- 为 OCS 生成独立调用凭证与题库配置，支持限速、每日额度和凭证撤销。
-- 展示查询统计及脱敏诊断；AI 答案标记为未核验，不能保证答案正确。
-- 应用运行配置外置，重启加载；运行日志持久化并自动轮转，启动自动执行待应用的数据库版本迁移。
+- 本地题库与 AI 两种查询通道；题库支持完整编辑、导入导出和答案版本，保留判断题。
+- 用户注册、个人凭证增删改查、撤销及 OCS 配置；凭证各自设置每日次数、RPM 和到期时间。
+- 成功返回本地或 AI 答案扣 1 积分，未命中／异常释放冻结；积分流水可追溯。注册默认赠 20 分。
+- 管理员独立管理用户、积分、凭证、AI 表单和系统设置；普通用户只查看本人工作区与记录。
+- 课程种子生成只新增题目；向量增量维护支持自动计划和手动唤醒，执行记录独立展示。
+- 桌面侧栏分组、深浅主题及局部反馈；运行配置外置、日志轮转、启动自动增量迁移。
+- AI 输出结构与去重检查不能证明内容正确，管理员可编辑答案并保留版本。
 
 ## 服务器安装（推荐）
 
 ### 1. 准备环境
 
-需要 Linux、Python 3.8+、Docker Engine、Docker Compose 插件，以及可访问的 PostgreSQL 17 数据库。运维脚本仅使用 Python 标准库，无需 pip 依赖。以下示例使用有 Docker 权限且可读写 `/data` 的账号执行。
+需要 Linux、Python 3.8+、Docker Engine、Docker Compose 插件，以及可访问、已安装 pgvector 的 PostgreSQL 17 数据库。运维脚本仅使用 Python 标准库，无需 pip 依赖。以下示例使用有 Docker 权限且可读写 `/data` 的账号执行。
 
 Docker 安装按发行版选择[官方安装教程](https://docs.docker.com/engine/install/)，并安装 [Compose 插件](https://docs.docker.com/compose/install/linux/)。安装后检查：
 
@@ -49,10 +51,11 @@ CREATE ROLE answer_hub LOGIN;
 \password answer_hub
 CREATE DATABASE answer_hub OWNER answer_hub;
 \connect answer_hub
+CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
 
-`pg_trgm` 用于模糊检索，需由有权限的数据库管理员安装；缺少时应用保留原有降级行为。应用账号需拥有目标库及相应建表、改表权限，以执行版本迁移。
+数据库服务器必须先安装 pgvector 二进制；普通 PostgreSQL 镜像不一定包含它。`vector` 和 `pg_trgm` 扩展需由有权限的数据库管理员准备，应用账号需具备迁移所需建表、改表权限。缺少扩展会阻止相关迁移和启动。
 
 Compose 使用名为 `databases` 的外部网络。如果数据库已在其他自定义网络内，安装时直接使用实际网络名。如果需要新网络，可执行：
 
@@ -136,7 +139,7 @@ ssh -L 18771:127.0.0.1:18771 用户名@服务器地址
     └── master.key      # 自动生成的加密主密钥，必须保留
 ```
 
-题库、管理员、来源配置和调用凭证存于 PostgreSQL。上游配置使用主密钥加密，数据库备份与 `storage/master.key` 应配套保存。数据库密码和上游密钥仅供服务端读取。
+题库、用户、积分流水、AI 配置、凭证及任务计划存于 PostgreSQL。AI 配置使用主密钥加密，数据库备份与原 `storage/master.key` 必须配套保存。数据库密码和 AI 密钥仅供服务端读取。
 
 ## 日常运维
 
@@ -170,11 +173,11 @@ python3 deploy.py update --dir /data/ocs-answer-hub --image ghcr.io/holic512/ocs
 
 首次安装或更新可使用 `--bind`、`--port` 调整宿主机监听参数；离线导入镜像后可加 `--no-pull`。完整参数见 [Python 运维说明](deploy/README.md)。
 
-升级前备份 PostgreSQL、`config/config.env`、`storage/`、`compose.yml` 和部署参数 `.env`。迁移失败时应用停止启动，不会清空数据库；脚本不会自动回滚数据库。恢复时应停止应用，并恢复同一备份时点的数据库及密钥。
+本轮升级含表改名、字段删除及非 AI 配置移除。先停止所有应用实例和 worker，备份完整 PostgreSQL、原 `storage/master.key`、配置及部署参数，**先在独立恢复副本验证目标版本**，再升级正式服务。旧账号一次获赠 20 分；旧向量标记过期后自动增量重建，期间 RAG 暂失效，精确／安全模糊和普通 AI 查询继续可用。迁移失败不自动回滚；仅换回旧镜像不能恢复已删除字段。完整步骤见[迁移与恢复](docs/DATABASE_AND_VERSIONING.md#升级备份与恢复)。
 
 ### 日志文件
 
-Docker 部署将应用日志保存到 `/data/ocs-answer-hub/logs/app.log`，同时保留 Docker 控制台输出。日志采用 JSON 行格式，记录 UTC 时间、级别和消息；单文件达到 10 MiB 后轮转，最多保留 `app.log.1`～`app.log.3` 三份历史文件。启动、API 请求、管理操作、查题回退及来源测试诊断都会落盘，无需增加配置项。页面显示的请求编号可关联对应日志；详细事件和排错方法见[日志与追溯](docs/LOGGING.md)。
+Docker 部署将应用日志保存到 `/data/ocs-answer-hub/logs/app.log`，同时保留 Docker 控制台输出。日志采用 JSON 行格式，记录 UTC 时间、级别和消息；单文件达到 10 MiB 后轮转，最多保留 `app.log.1`～`app.log.3` 三份历史文件。启动、API 请求、管理操作、AI 查询及任务错误会落盘，无需增加配置项。页面显示的请求编号可关联对应日志；详细事件和排错方法见[日志与追溯](docs/LOGGING.md)。
 
 ```sh
 tail -n 100 /data/ocs-answer-hub/logs/app.log
@@ -187,12 +190,13 @@ tail -f /data/ocs-answer-hub/logs/app.log
 
 ## 使用与 OCS 接入
 
-1. 在「检索来源」添加言溪、HTTP 或 AI 来源。参考 [examples/providers](examples/providers/)，替换凭据、地址和模型等占位符；示例不会自动导入或启用。
-2. 按需要启用来源并调整顺序，本地题库始终先查。单源测试可测试禁用或未保存配置，不写题库、不扣本服务凭证额度，但可能消耗上游额度。
-3. 在「查题工作台」验证查询结果，确认来源及答案正确。
-4. 在「OCS 接入」创建调用凭证、生成 JSON，粘贴到 OCS 第三方题库配置；用户脚本需允许实际部署域名的 `@connect`。
+1. 管理员在「管理 → AI 配置」填写地址、密钥、模型、协议及输出模式，测试后启用并排序；本地题库始终优先。测试可使用草稿，不保存题目或扣本系统积分，但会调用真实 AI。
+2. 用户在「调用凭证」创建凭证，妥善保存仅显示一次的完整值及 OCS 配置。凭证支持修改、撤销和删除。
+3. 在查题工作台选择本人的已有凭证。成功获得答案扣 1 分，已受理请求累计该凭证次数；个人记录和积分流水分别可查。
+4. 将生成的 JSON 粘贴到 OCS 的自定义题库配置位置；用户脚本需允许实际域名的 `@connect`。wrapper 包含本服务凭证，不包含 AI 密钥。
+5. 管理员在「题库迭代」选择课程种子生成新题；向量覆盖、自动化计划和执行记录在独立运维菜单处理。
 
-OCS 凭证与上游密钥独立，生成的 OCS 配置不包含上游密钥。通用 HTTP 配置只支持字段映射和模板，不执行自定义 JavaScript handler。详细字段及 AI 配置见[配置参考](docs/CONFIGURATION.md#题库源配置)。
+当前不支持外部题库转发。凭证限额、系统设置及 AI 字段见[配置参考](docs/CONFIGURATION.md)，开发接口见[接口索引](docs/API.md)。
 
 ## 本地开发
 
@@ -203,7 +207,7 @@ git clone https://github.com/holic512/ocs-answer-hub.git
 cd ocs-answer-hub
 npm ci
 
-# 仅首次需要：生成 .env，再启动隔离的本地 PostgreSQL。
+# 仅首次需要：生成 .env。确认数据库镜像支持 pgvector 后启动。
 node scripts/setup-local.mjs
 docker compose -f compose.dev.yaml up -d --wait
 
@@ -211,7 +215,7 @@ docker compose -f compose.dev.yaml up -d --wait
 npm run dev
 ```
 
-访问 `http://127.0.0.1:5173`。`setup-local.mjs` 不覆盖已有 `.env`，只为本地数据库生成密码；管理员仍由首次页面创建。使用已有 PostgreSQL 时填写 `.env` 的五项数据库字段，无需启动本地 Docker 数据库。
+访问 `http://127.0.0.1:5173`。`setup-local.mjs` 不覆盖已有 `.env`，只为本地数据库生成密码；管理员仍由首次页面创建。使用已有 PostgreSQL 时先准备 `vector`、`pg_trgm` 扩展，再填写 `.env` 的五项数据库字段，无需启动本地 Docker 数据库。
 
 本地数据库默认映射到 `127.0.0.1:15432`，测试数据库由验收工具自动创建到独立临时容器。前端默认 `5173`，通过代理访问后端 `18771`；`APP_ORIGIN` 必须与浏览器地址一致。停止本地数据库并保留数据：
 
@@ -268,15 +272,17 @@ node scripts/clean.mjs
 | 改了 Docker 端口但未生效 | 重新执行 `start` 创建容器，仅 `restart` 不更新映射 |
 | 修改数据库密码后连接失败 | 已初始化的 PostgreSQL 不会随配置文件自动改密，先同步数据库账号密码 |
 | 升级迁移失败 | 查看应用日志和迁移记录，按[迁移说明](docs/DATABASE_AND_VERSIONING.md)处理，保留业务数据 |
-| 丢失主密钥后上游配置无法解密 | 恢复原主密钥，或重新填写上游密钥；不要给旧数据库随意更换主密钥 |
+| 丢失主密钥后 AI 配置无法解密 | 恢复原主密钥，或重新填写 AI 密钥；不要给旧数据库随意更换主密钥 |
 
-上游支持 HTTP / HTTPS、自定义端口、公网、局域网、容器主机名、回环地址及 IPv6，无需配置白名单。HTTP 会明文传输题目及凭据；容器内的回环地址指向应用容器自身。
+AI 接口支持 HTTP / HTTPS、自定义端口、公网、局域网、容器主机名、回环地址及 IPv6。HTTP 会明文传输题目及凭据；容器内的回环地址指向应用容器自身。
 
 ## 参考文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [配置参考](docs/CONFIGURATION.md) | 数据库、运行配置和三类上游来源字段 |
+| [配置参考](docs/CONFIGURATION.md) | 运行配置、系统设置、积分／凭证及 AI 表单 |
+| [接口索引](docs/API.md) | 认证、工作区、管理与运维接口 |
+| [升级与向量运维](docs/MULTIUSER_UPGRADE.md) | 模型安装、自动计划、RAG 与课程种子生成 |
 | [部署与恢复](deploy/OPERATIONS.md) | Compose、预置配置、发布规则及旧部署迁移 |
 | [Python 运维](deploy/README.md) | 安装、启停、更新、日志及离线参数 |
 | [本地开发](docs/LOCAL_DEVELOPMENT.md) | 开发环境、测试隔离及目录说明 |
@@ -286,8 +292,8 @@ node scripts/clean.mjs
 
 应用版本取自 `package.json`；每次提交递增补丁号，超过 20 时次版本号加一。仓库当前未提供 LICENSE 文件，使用和分发前请与维护者确认授权。
 
-## 多用户与本地语义检索升级
+## 工作区与向量升级
 
-登录默认进入查题工作台，管理员和普通用户共用数据库原子额度；OCS 凭证按用户归属计次。管理员可管理用户、课程 AI 生成和可恢复向量回填。模型固定为本地 BGE-small-zh-v1.5 signed INT8（512维），不使用远程 Embedding。
+本轮增量迁移保留账号、凭证、题目答案及历史记录，移除旧外部题库配置和题目来源／核验／冲突字段；用户级额度改为凭证额度，旧用户一次获赠 20 分。新版本不兼容旧实例混跑。
 
-升级前备份数据库及 master.key，先准备 pgvector/pg_trgm；新增迁移保留全部旧账号、凭证及题库数据。[完整升级、模型安装、任务和并发说明](docs/MULTIUSER_UPGRADE.md)。
+向量模型固定为本地 BGE-small-zh-v1.5 signed INT8（512 维），不使用远程 Embedding。迁移令旧索引失效，默认每 5 分钟自动回填，也可手动唤醒；相关课程完整覆盖前 RAG 和生成有明确限制。请先阅读[数据库升级与恢复](docs/DATABASE_AND_VERSIONING.md)及[模型／任务说明](docs/MULTIUSER_UPGRADE.md)，完成停机备份与独立恢复副本验证。

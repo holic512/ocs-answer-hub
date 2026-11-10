@@ -1,8 +1,27 @@
-import test from 'node:test';import assert from 'node:assert/strict';import fs from 'node:fs/promises';
-test('both password inputs allow eight characters and do not require special symbols',async()=>{const ui=await fs.readFile(new URL('../web/src/pages/SettingsPage.tsx',import.meta.url),'utf8');assert(!ui.includes('minLength={12}'));assert.equal((ui.match(/minLength=\{8\}/g)??[]).length,2);assert(ui.includes('至少 8 位'));});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {workspace} from './support/workspace.js';
 
-test('setup form allows eight character passwords and uses password confirmation',async()=>{
- const ui=await fs.readFile(new URL('../web/src/InitialSetup.tsx',import.meta.url),'utf8');
- assert.equal((ui.match(/minLength=\{8\}/g)??[]).length,2);
- assert(ui.includes('name="confirmPassword"'));assert(ui.includes('autoComplete="new-password"'));
+test('registration and administrator reset accept eight characters without symbol requirements',async t=>{
+ for(const method of ['info','warn','error'] as const)t.mock.method(console,method,()=>{});
+ const w=await workspace();
+ try{
+  const register=(password:string,confirmPassword=password)=>w.request('POST','/api/register',{username:'eight-char-user',password,confirmPassword});
+  assert.equal((await register('1234567')).statusCode,400);
+  assert.equal((await register('12345678','87654321')).statusCode,400);
+  const created=await register('12345678');assert.equal(created.statusCode,201,created.body);
+  assert.equal((await w.pool.query('SELECT must_change FROM users WHERE id=$1',[created.json().id])).rows[0].must_change,false);
+  const reset=await w.request('POST',`/api/admin/users/${created.json().id}/password`,{password:'abcdefgh'});assert.equal(reset.statusCode,200,reset.body);
+  const user=await w.login('eight-char-user','abcdefgh');assert.equal((await w.request('GET','/api/admin/me',undefined,user)).json().mustChange,true);
+ }finally{await w.close();}
+});
+test('password change enforces eight characters and invalidates existing sessions',async t=>{
+ for(const method of ['info','warn','error'] as const)t.mock.method(console,method,()=>{});
+ const w=await workspace();
+ try{
+  assert.equal((await w.request('POST','/api/admin/password',{oldPassword:'password888',newPassword:'short77'})).statusCode,400);
+  const changed=await w.request('POST','/api/admin/password',{oldPassword:'password888',newPassword:'abcdefgh'});assert.equal(changed.statusCode,200,changed.body);
+  assert.equal((await w.request('GET','/api/admin/me')).statusCode,401);
+  await w.login('owner','abcdefgh');
+ }finally{await w.close();}
 });

@@ -6,7 +6,7 @@ datasource db {
   provider = "postgresql"
 }
 
-model administrators {
+model users {
   sessions sessions[]
   api_tokens api_tokens[]
   query_events query_events[]
@@ -14,19 +14,16 @@ model administrators {
   id            Int      @id @default(autoincrement())
   role String @default("user")
   disabled Boolean @default(false)
-  daily_limit Int @default(2000)
-  rpm Int @default(60)
-  usage_day DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
-  day_count Int @default(0)
-  minute_bucket DateTime @default(dbgenerated("date_trunc('minute'::text, now())")) @db.Timestamptz(6)
-  minute_count Int @default(0)
+  deleted_at DateTime? @db.Timestamptz(6)
+  balance Int @default(0)
+  frozen Int @default(0)
   username      String   @unique
   password_hash String
   must_change   Boolean  @default(true)
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 }
 model sessions {
-  administrator administrators @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_id Int @default(1)
   @@index([user_id], map: "sessions_user_idx")
   hash       String   @id
@@ -45,7 +42,7 @@ model providers {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 }
 model api_tokens {
-  administrator administrators @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_id Int @default(1)
   @@index([user_id], map: "tokens_user_idx")
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -81,9 +78,7 @@ model questions {
   images        Json     @default("[]")
   course        String   @default("")
   answer        String
-  source        String
-  verified      Boolean  @default(false)
-  conflict      Boolean  @default(false)
+  content_version Int @default(1)
   deleted       Boolean  @default(false)
   hit_count     Int      @default(0)
   created_at    DateTime @default(now()) @db.Timestamptz(6)
@@ -94,19 +89,23 @@ model questions {
   @@index([created_at(sort: Desc)], map: "question_created_idx")
 }
 model answer_versions {
+  operation String @default("历史修改")
+  snapshot Json?
   id          BigInt    @id @default(autoincrement())
   question_id String    @db.Uuid
   answer      String
-  source      String
-  verified    Boolean   @default(false)
   created_at  DateTime  @default(now()) @db.Timestamptz(6)
   question    questions @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 model query_events {
-  administrator administrators? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  user users? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   user_id Int?
   @@index([user_id,created_at(sort: Desc)], map: "events_user_date_idx")
   id          BigInt   @id @default(autoincrement())
+  token_name String?
+  token_prefix String?
+  billing_status String @default("none")
+  billing_expires_at DateTime? @db.Timestamptz(6)
   token_id    String?  @db.Uuid
   title       String
   status      String
@@ -145,9 +144,11 @@ model schema_migrations {
 
 // 后台任务由 PostgreSQL 租约调度，SQL 外键与 CHECK 见增量迁移。
 model background_jobs {
- administrator administrators @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+ user users @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
  questions questions[]
  previews generation_previews[]
+ seed_snapshot Json @default("[]")
+ schedule_id String? @db.Uuid
  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
  kind String
  user_id Int
@@ -177,6 +178,7 @@ model question_vectors {
  question_id String @id @db.Uuid
  embedding Unsupported("vector(512)")
  content_hash String
+ content_version Int @default(0)
  model String
  updated_at DateTime @default(now()) @db.Timestamptz(6)
  // HNSW vector_cosine_ops 由 SQL 迁移维护，Prisma 不支持该索引类型。
@@ -198,7 +200,35 @@ model vector_index_skips {
  question questions @relation(fields: [question_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
  question_id String @id @db.Uuid
  content_hash String
+ content_version Int @default(0)
  model String
  reason String
+ updated_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model credit_ledger {
+ id BigInt @id @default(autoincrement())
+ user_id Int
+ amount Int
+ balance Int
+ reason String
+ actor_id Int?
+ event_id BigInt? @unique
+ reference_key String? @unique
+ created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+model task_schedules {
+ id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+ name String
+ kind String
+ enabled Boolean @default(false)
+ mode String @default("interval")
+ interval_minutes Int @default(5)
+ time_of_day String @default("03:00")
+ config Json @default("{}")
+ next_run_at DateTime @default(now()) @db.Timestamptz(6)
+ last_run_at DateTime? @db.Timestamptz(6)
+ user_id Int?
+ created_at DateTime @default(now()) @db.Timestamptz(6)
  updated_at DateTime @default(now()) @db.Timestamptz(6)
 }

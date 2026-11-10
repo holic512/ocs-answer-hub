@@ -2,61 +2,74 @@
 
 ## 环境和启动
 
-1. 安装 Node.js 24（可使用 `.nvmrc`）和 Docker Desktop / Docker Compose。
-2. `npm ci && node scripts/setup-local.mjs`，自动生成随机数据库密码及被忽略的 `.env`。
-3. `docker compose -f compose.dev.yaml up -d --wait`，只初始化应用数据库。只使用本项目独立 Docker volume。
-4. 运行 `npm run dev`，同时启动后端和前端；打开 http://127.0.0.1:5173，按 Ctrl+C 一起停止。构建使用 `npm run build`。
-5. 打开页面，数据库无管理员时先设置管理员账号和密码，然后登录。管理员登录密码与数据库密码、API token、加密主密钥是不同的东西。
+需要 Node.js 24、npm、PostgreSQL 17；数据库必须提供 `vector` 和 `pg_trgm` 扩展。本仓库 `compose.dev.yaml` 使用 `pgvector/pgvector:0.8.2-pg17`；使用其它镜像时需确认包含 pgvector，普通 `postgres` 镜像通常不提供该扩展二进制。不要为安装扩展删除已有数据库卷。
 
-Node 自动加载项目根 `.env`，无需 shell `source`，兼容 PowerShell。已有环境变量优先于 `.env`。`setup-local.mjs` 不覆盖已有配置；如手改本地 PG 密码，已初始化的 volume 不会同步改密码，应通过数据库管理方式同步，勿为改密码随意删 volume。
+```sh
+npm ci
+node scripts/setup-local.mjs
+# 启动包含 pgvector 的隔离开发数据库
+# 使用已有开发数据库时跳过本行，填写 .env 五项数据库字段
+docker compose -f compose.dev.yaml up -d --wait
+npm run dev
+```
 
-`docker compose -f compose.dev.yaml stop` 停止本地 PostgreSQL但保留数据。通常不要用 `docker compose down -v`；`-v` 会删除本地数据库，源码迁移不需要此命令。
+打开 `http://127.0.0.1:5173`，先初始化管理员。后端默认 `18771`；前端代理 API，`APP_ORIGIN` 必须匹配地址栏。`Ctrl+C` 一起停止前后端。构建使用 `npm run build`，产物为 `dist/server`、`dist/web`。
 
-## 不使用 Docker
+`setup-local.mjs` 生成 `.env` 与随机数据库密码，不覆盖已有配置。Node 自动加载根 `.env`，无需 shell `source`，已有环境变量优先。管理员密码、数据库密码、OCS 凭证和主密钥各自独立。初始管理员获得 20 分，普通注册默认 20 分，系统设置可调整后续注册赠分。
 
-手工准备 PostgreSQL 17，创建 `ocs_answer_hub_dev` 开发数据库，授权开发角色在 public schema 建表，并预装 `CREATE EXTENSION IF NOT EXISTS pg_trgm;`。填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动自动执行 Prisma 版本迁移。修改模型和提交版本规则见 `docs/DATABASE_AND_VERSIONING.md`。
+本地 Docker 默认映射 `127.0.0.1:15432`。`docker compose -f compose.dev.yaml stop` 停止数据库并保留数据；不要用 `down -v` 升级或改密码。已初始化的卷不会因修改 `.env` 自动变更库名、账号或密码。
 
-`compose.dev.yaml` 使用的 PostgreSQL超级用户仅适用于回环地址上的隔离开发，不能直接照搬生产；生产必须使用独立低权限角色。
+使用现有数据库时，由数据库管理员在开发库执行：
 
-## 测试安全
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
 
-测试不加载 `.env`，数据库测试及浏览器验收自动创建独立临时 PostgreSQL 17 容器，使用随机密码和回环随机端口；不连接开发或业务数据库，结束后删除本次容器。运行前需要可用的 Docker，无需填写测试配置。
+授予开发角色必要迁移权限，填写 `.env` 的 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。本地数据库超级用户只适用于隔离开发，生产使用项目专用账号。迁移、备份和版本规则见[数据库说明](DATABASE_AND_VERSIONING.md)。
 
-- `npm test`：单元、真实 HTTP 及独立 PostgreSQL 集成和迁移测试。
-- `node scripts/verify.mjs`：依次测试、类型检查、构建、生产依赖审计。
-- `npx playwright install chromium`：首次安装 Playwright 默认浏览器。
-- `node --import tsx scripts/browser-acceptance.ts`：先运行 `npm run build`，再执行浏览器验收；不依赖手动启动开发服务。
-- 报告与截图固定保存到 `artifacts/verification`，可通过清理脚本移除。
-- 测试只使用合成题目和本地/注入式上游，不调用实际第三方或 AI；通过不代表真实供应商已通过。
+## 可选本地模型
 
-## 来源测试诊断日志
+普通本地／AI 查题不要求安装向量模型。RAG、课程种子生成和向量维护需要固定 BGE-small-zh-v1.5 INT8：
 
-后台单源测试的开始、请求阶段和结果均会记录；失败时，服务端输出以 `[provider-test]` 开头的单行 JSON 日志。开发环境查看 `npm run dev` 所在终端或项目根 `logs/app.log`；Docker 部署查看宿主机 `logs/app.log` 或运维脚本 `logs` 输出。
+```sh
+node scripts/install-embedding.mjs /absolute/path/models/bge-small-zh-v1.5
+```
 
-日志包含来源、模型、HTTP 状态、失败阶段和耗时。答案匹配失败时额外记录提取答案的类型、值和解析后的选项；模型最终输出不是有效 JSON 时记录截断后的最终文本。配置中的凭据会脱敏，不输出完整请求、请求头、推理字段或原始上游错误。详细诊断不返回浏览器，也不写入题库或查题统计。
+设置 `LOCAL_EMBEDDING_PATH` 为该绝对目录，重启，再到向量索引页面检查。默认计划会自动回填，也可手动执行；向量未完整覆盖期间 RAG 暂关闭，生成任务不能绕过去重。详见[运维](MULTIUSER_UPGRADE.md)。
 
-页面会显示请求编号，可按编号检索同一次操作的全部日志。完整事件、脱敏和查询方法见[日志与追溯](LOGGING.md)。分享问题时提供对应的请求编号和日志即可。测试题目与答案可能是业务内容，分享前仍应检查是否适合公开。
+## 验证与测试安全
 
-## 目录
+```sh
+npm run typecheck
+npm test
+npm run build
+python3 -B -m unittest discover -s tests -p test_deploy.py
+```
+
+数据库测试自动使用独立临时 PostgreSQL 容器，不加载业务 `.env`，采用随机密码和回环随机端口，结束后删除本次容器。运行需可用 Docker，不需要测试数据库配置。测试使用合成题目和本地／注入式 AI，不证明真实供应商已通过。
+
+`node scripts/verify.mjs` 按脚本执行测试、类型检查、构建与依赖审计。浏览器验收先构建，首次执行 `npx playwright install chromium`，再执行 `node --import tsx scripts/browser-acceptance.ts`；报告和截图保存到 `artifacts/verification`。浏览器脚本需与当前页面契约保持同步，不能以构建成功替代交互验收。
+
+## AI 诊断
+
+在 AI 配置表单测试地址、协议、模型、输出预算和输出模式。测试直接请求 AI，不写题库／正式查询、不扣本系统积分或凭证次数，但可能产生供应商费用。失败反馈保留请求编号与阶段，结合 `logs/app.log` 查找 HTTP 异常；正式查询的回退、JSON／选项错误及 RAG 原因在查询记录查看。具体见[日志与追溯](LOGGING.md)。
+
+## 目录与分层
 
 | 路径 | 内容 |
 | --- | --- |
-| `server/` | API、鉴权、查题引擎、上游协议、安全传输、数据库结构 |
-| `web/` | React 中文管理界面 |
-| `tests/` | 单元、HTTP 夹具、独立 PostgreSQL 回归 |
-| `scripts/` | 可移植的本地配置与验收工具 |
-| `examples/providers/` | 无密钥来源配置示例 |
-| `deploy/` | 新环境部署模板及运维说明 |
-| `.env.example` | 本地环境变量示例 |
-| `.env`、`state/`、`logs/`、`artifacts/` | 私密/生成文件，不入 Git |
+| `server/app.ts`、`server/modules/` | 应用装配与认证、用户、凭证、题库、AI、系统设置、查询、运维接口 |
+| `server/accounts.ts`、`engine.ts`、`jobs.ts`、`semantic.ts` | 积分／受理、查询编排、持久任务、本地向量与 RAG |
+| `server/ai/`、`providers.ts`、`ai-output.ts` | 提示词／输出契约、AI 协议请求与最终回答提取 |
+| `shared/` | 前后端公共契约 |
+| `web/` | React 桌面界面，shadcn/Radix、Tailwind、RHF+Zod、TanStack 表格 |
+| `prisma/` | 当前模型、固定旧基线、增量迁移 |
+| `tests/`、`scripts/` | 测试、本地配置、模型安装和验收工具 |
+| `examples/providers/` | 无密钥 AI 配置参考，页面使用表单 |
+| `deploy/` | 部署模板与运维脚本 |
+| `.env`、`state/`、`storage/`、`logs/`、`artifacts/` | 私密／生成文件，不入 Git |
 
 ## 开发产物清理
 
-先停止开发服务或验收任务，再执行：
-
-```sh
-node scripts/clean.mjs --dry-run
-node scripts/clean.mjs
-```
-
-脚本仅清理固定目录中的构建产物、验收报告和工具缓存；保留依赖本身、配置、数据库、密钥、运行日志及备份。需要保留的验收证据请先移出 `artifacts/`。清理后 `npm run dev` 可直接启动，打包时重新执行 `npm run build`。
+停止服务和验收任务后执行 `node scripts/clean.mjs --dry-run` 检查，再执行 `node scripts/clean.mjs`。只清理固定构建、报告和缓存目录，保留依赖、配置、数据库、主密钥、运行日志及备份；需要保留的验收证据先移出 `artifacts/`。

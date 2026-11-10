@@ -20,7 +20,7 @@ export async function probeProvider(provider:Provider,input:QuestionInput,transp
  rememberLogSecrets(provider.config);
  const started=Date.now(),steps:ProbeStep[]=[],warnings:string[]=[];
  const report:ProbeResult={providerId:provider.id,providerName:provider.name,status:'failed',reachable:false,answer:null,durationMs:0,persisted:false,warnings,steps};
- const endpoint=provider.kind==='ai'?provider.config.baseUrl:provider.kind==='yanxi'?'https://tk.enncy.cn/query':provider.config.url;
+ const endpoint=provider.config.baseUrl;
  if(typeof endpoint==='string'&&endpoint.startsWith('http:'))warnings.push('HTTP上游为明文传输，题目和该上游密钥不会被HTTPS保护。');
  if(provider.kind==='ai')warnings.push('这次测试会实际请求该模型，可能消耗AI额度；答案不写入题库。');
  let networkObserved=false,received=false;

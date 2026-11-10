@@ -10,4 +10,4 @@
  */
 import {Outlet} from 'react-router';
 import {useApp} from '../context/app';
-export default function AuthLayout(){const {notice}=useApp();return <div className="auth-layout"><div className="auth-brand"><div className="brand-symbol">知</div><p className="auth-brand-name">知序</p><p>你的个人题库，按自己的顺序检索。</p></div><main className="auth-main">{notice&&<div className="notice" role="status">{notice}</div>}<Outlet/></main></div>;}
+export default function AuthLayout(){const {notice}=useApp();return <div className="auth-layout"><div className="auth-brand"><div className="brand-symbol">知</div><p className="auth-brand-name">知序</p><p>本地题库与 AI，一处完成查询和管理。</p></div><main className="auth-main">{notice&&<div className="notice" role="status">{notice}</div>}<Outlet/></main></div>;}

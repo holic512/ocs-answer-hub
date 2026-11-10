@@ -1,3 +1,4 @@
+import type {Session,Setup,ApiError} from '../../../shared/api-types';
 /**
  * @file app.tsx
  * @project ocs-answer-hub
@@ -12,9 +13,11 @@ import {createContext,useContext,useState,useEffect,useRef,type ReactNode} from 
 import {Confirmation} from '../components/ui/confirmation';
 import {api,setCsrf} from '../lib/api';
 type User={id:number;role:'admin'|'user';username:string;csrf:string;mustChange:boolean};
-type AppState={confirm:(message:string)=>Promise<boolean>;user:User|null;loaded:boolean;setupRequired:boolean|null;error:string;notice:string;busy:boolean;loginName:string;loadUser:()=>Promise<void>;run:(fn:()=>Promise<any>)=>Promise<any>;notify:(message:string)=>void;clearError:()=>void;login:(data:Record<string,FormDataEntryValue>)=>Promise<User>;endSession:()=>void;logout:()=>Promise<void>;completeSetup:(username?:string)=>Promise<void>};
+export type SetupSettings={registrationEnabled:boolean;registrationCredits:number;tokenDefaults:{daily_limit:number;rpm:number;max_daily_limit:number;max_rpm:number}};
+type AppState={setup:SetupSettings;confirm:(message:string)=>Promise<boolean>;user:User|null;loaded:boolean;setupRequired:boolean|null;error:string;notice:string;busy:boolean;loginName:string;loadUser:()=>Promise<void>;run:<T>(fn:()=>Promise<T>)=>Promise<T|undefined>;notify:(message:string)=>void;clearError:()=>void;login:(data:Record<string,FormDataEntryValue>)=>Promise<User>;endSession:()=>void;logout:()=>Promise<void>;completeSetup:(username?:string)=>Promise<void>};
 const AppContext=createContext<AppState>(null!);
 export function AppProvider({children}:{children:ReactNode}){
+ const [setup,setSetup]=useState<SetupSettings>({registrationEnabled:true,registrationCredits:20,tokenDefaults:{daily_limit:2000,rpm:60,max_daily_limit:2000,max_rpm:60}});
  const [user,setUser]=useState<User|null>(null),[loaded,setLoaded]=useState(false),[setupRequired,setSetupRequired]=useState<boolean|null>(null);
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[pending,setPending]=useState(0),[loginName,setLoginName]=useState('admin');
  const [confirmation,setConfirmation]=useState<{message:string;resolve:(answer:boolean)=>void}|null>(null);
@@ -22,17 +25,17 @@ export function AppProvider({children}:{children:ReactNode}){
  const noticeTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  async function loadUser(){
   setLoaded(false);setError('');
-  try{const setup=await api('/setup');setSetupRequired(setup.required);if(setup.required){endSession();return;}
-   try{const current=await api('/admin/me');setCsrf(current.csrf);setUser(current);}catch(error:any){if(error.status!==401)throw error;endSession();}
-  }catch(error:any){setSetupRequired(null);setError(error.message);}finally{setLoaded(true);}
+  try{const setup=await api<Setup>('/setup');setSetup(setup);setSetupRequired(setup.required);if(setup.required){endSession();return;}
+   try{const current=await api<Session>('/admin/me');setCsrf(current.csrf);setUser(current);}catch(error){if((error as ApiError).status!==401)throw error;endSession();}
+  }catch(error){setSetupRequired(null);setError(error instanceof Error?error.message:"无法连接系统");}finally{setLoaded(true);}
  }
  useEffect(()=>{void loadUser();return ()=>clearTimeout(noticeTimer.current);},[]);
- async function run(fn:()=>Promise<any>){setPending(count=>count+1);setError('');try{return await fn();}catch(error:any){setError(error.message);return undefined;}finally{setPending(count=>count-1);}}
+ async function run<T>(fn:()=>Promise<T>){setPending(count=>count+1);setError('');try{return await fn();}catch(error){setError(error instanceof Error?error.message:"操作失败");return undefined;}finally{setPending(count=>count-1);}}
  function notify(message:string){clearTimeout(noticeTimer.current);setNotice(message);noticeTimer.current=setTimeout(()=>setNotice(''),4000);}
  function endSession(){setCsrf('');setUser(null);}
- async function login(data:Record<string,FormDataEntryValue>){const current=await api('/login','POST',data);setCsrf(current.csrf);setUser(current);setNotice('');return current;}
+ async function login(data:Record<string,FormDataEntryValue>){const current=await api<Session>('/login','POST',data);setCsrf(current.csrf);setUser(current);setNotice('');return current;}
  async function logout(){await api('/admin/logout','POST',{});endSession();}
  async function completeSetup(username?:string){setLoginName(username??'');await loadUser();notify(username?'管理员已创建，请使用新账号登录':'系统已完成初始化，请登录');}
- return <AppContext.Provider value={{confirm,user,loaded,setupRequired,error,notice,busy:pending>0,loginName,loadUser,run,notify,clearError:()=>setError(''),login,endSession,logout,completeSetup}}>{children}{confirmation&&<Confirmation message={confirmation.message} onAnswer={answer=>{confirmation.resolve(answer);setConfirmation(null);}}/>}</AppContext.Provider>;
+ return <AppContext.Provider value={{setup,confirm,user,loaded,setupRequired,error,notice,busy:pending>0,loginName,loadUser,run,notify,clearError:()=>setError(''),login,endSession,logout,completeSetup}}>{children}{confirmation&&<Confirmation message={confirmation.message} onAnswer={answer=>{confirmation.resolve(answer);setConfirmation(null);}}/>}</AppContext.Provider>;
 }
 export function useApp(){return useContext(AppContext);}

@@ -1,55 +1,86 @@
 # 数据库迁移与系统版本
 
-## 日常使用
+## 启动迁移
 
-数据库连接仍然只需在 `.env` 填写 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`，不增加其他必填项。应用启动先执行 Prisma 版本迁移，成功后才对外提供服务。
+连接配置为 `DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、`DB_PASSWORD`。应用启动先执行 Prisma `migrate deploy`，成功后才开放 API。
 
-- 空库：自动创建初始结构并记录迁移版本。
-- 已迁移的库：只执行 `prisma/migrations` 中尚未应用的迁移，重复启动不会重复执行。
-- 旧系统数据库：识别 `schema_migrations` 中的 `001-initial`，先校验结构，再建立 Prisma 基线；保留账号、题库、来源、凭证和历史数据。未安装扩展时缺失的可选模糊索引不阻止接管。
-- 未知结构或迁移失败：停止启动，不执行重置；查看 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 并核对迁移记录。
+- 空库按顺序应用全部迁移；重复启动只执行尚未应用的迁移。
+- 最早使用 `schema_migrations`、`001-initial` 的数据库，会先校验固定基线，再接入 Prisma 历史。未知结构停止启动，不执行重置。
+- `_prisma_migrations` 保存当前迁移记录；原 `schema_migrations` 保留为历史。
+- PostgreSQL 17 需安装 `vector` 和 `pg_trgm` 扩展；数据库管理员应在升级前准备扩展及必要权限。
 
-`prisma/schema.prisma` 是当前模型；`prisma/migrations` 是不可随意修改的版本历史；`prisma/baseline.prisma` 是旧版固定快照，不随业务模型更新。迁移记录保存在 `_prisma_migrations`，原 `schema_migrations` 作为旧系统记录保留。
+`prisma/schema.prisma` 描述当前模型，`prisma/migrations` 是已发布的版本历史，`prisma/baseline.prisma` 是旧版固定快照。业务模块主要通过 `pg` 执行参数化 SQL，事务、额度、积分和任务锁也在数据库完成；Prisma 负责版本迁移及客户端生成。
 
-Prisma 与原有 pg 共用连接池。来源的常规读写采用 Prisma ORM；题库模糊匹配、统计、事务锁和配额原子更新保留 PostgreSQL 专用 SQL。初始版本的 pg_trgm 为可选扩展；多用户/向量版本要求准备 vector 与 pg_trgm，具体步骤见 [兼容升级](MULTIUSER_UPGRADE.md)。扩展缺失时新迁移事务回滚并停止启动。
+## 本轮增量迁移
 
-## 开发新表结构
+`20261109010000_workspace_refactor` 接续既有迁移，不重建业务库。历史多用户迁移中曾出现的用户级每日额度／RPM，已被该迁移移除，当前限制只属于凭证。
 
-1. 在独立开发数据库修改 `prisma/schema.prisma`。
-2. 运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate dev --create-only --name add_question_field` 生成待审查迁移；Prisma 开发迁移需要独立影子数据库权限，不在生产上运行。
-3. 核对生成的 SQL，特别是字段删除、类型变化和默认值；需要保留的数据应通过显式 SQL 转换。
-4. 运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy` 应用待执行迁移，再运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js generate` 更新客户端。
-5. 一并提交模型和迁移目录。已应用的迁移不再修改，新变更新增迁移。
+| 变更 | 数据影响 |
+| --- | --- |
+| `administrators` 改名 `users` | 保留账号 ID、密码哈希、角色、会话及关联归属；增加软删除与积分字段 |
+| 积分账本 | **已有每个账号一次性赠送 20 分**，记入 `系统升级赠送` 流水；由迁移记录保证不随重启重复赠送，不取决于后续注册赠分设置 |
+| 仅保留 AI 配置 | 删除非 AI 的 provider 配置；原 AI 密文继续依赖原主密钥 |
+| 精简题目与版本 | 删除题目的 `source/verified/conflict`、答案版本的 `source/verified`；保留题目、答案和历史版本，增加操作描述／快照字段。历史版本没有的新快照不补造 |
+| 凭证及查询 | 保留凭证哈希、额度与计数，增加查询凭证名称／前缀快照和积分结算状态；历史查询不追溯扣积分 |
+| 内容版本与向量 | 题目版本初始为 `1`，旧向量及跳过记录为 `0`，因此全部视为过期，后台重新编码 |
+| 持久任务计划 | 新增计划表及默认启用的「向量增量维护」，间隔 5 分钟；新增种子快照及计划关联 |
+| 查询索引 | 新增课程／题型、更新时间、凭证归属、积分流水、待结算及到期计划索引 |
 
-`pg_trgm`/HNSW 索引、vector(512) 维度与 CHECK 约束包含手写 SQL，调整相关模型时需同步检查生成迁移。不要使用 `db push` 或 `migrate reset` 更新现有业务数据库。
+删除的旧配置和字段无法由新库反向恢复。新版本仍支持判断题，删除的是旧数据标记机制。旧迁移文件仅保留历史事实，不代表当前产品功能。
 
-## 部署升级
+## 升级、备份与恢复
 
-先备份数据库与主密钥（本地 `state/master.key`，镜像部署为 `storage/master.key`），部署脚本直接拉取发布镜像，源码构建由多阶段 Dockerfile 完成。Docker 镜像包含 Prisma 客户端、迁移工具、数据库模型定义与迁移文件（不包含 Embedding 权重）；启动会按顺序应用新迁移。也可以在启动前手动运行 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate deploy`，用 `node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status` 查看状态。迁移账号需要相应的建表、改表权限。
+本轮含字段删除及表改名，采用停机升级，不与旧实例混跑。操作前先阅读[模型与任务升级](MULTIUSER_UPGRADE.md)。
 
-迁移版本与应用版本分别记录：应用版本是 `1.0.0` 等版本号，数据库版本是按时间排序的迁移目录。发布包含哪些迁移由该提交内的迁移目录确定；不提供自动降级或自动删除业务数据。
+1. 确认目标镜像、扩展和应用账号权限，记录当前应用版本、迁移状态及配置。
+2. **停止所有应用实例及内嵌 worker**，再备份完整 PostgreSQL 数据库（包含迁移表）、原 `master.key`、运行配置、Compose 与部署参数。模型文件可一并归档，或保留可重建的固定版本安装材料。
+3. 将备份恢复到独立数据库副本，用原密钥和隔离配置启动目标版本。不要将验证实例接入业务数据库；先暂停复制来的计划、隔离真实 AI 网络，避免自动任务调用上游。
+4. 在副本确认迁移、账号登录、旧题答案、凭证归属、一次 20 分流水及 AI 配置可解密；重启后再次核对赠分不重复。准备模型后检查向量覆盖和查询行为。
+5. 副本验证通过后再升级正式服务。启动会应用待执行迁移；先检查迁移、查询、余额／流水，再开放流量。向量未完成期间按下一节处理。
+
+数据库备份与原密钥必须成套保存。本地默认密钥为 `state/master.key`，Docker 部署对应宿主机 `storage/master.key`；容器内为 `/app/storage/master.key`。不得用新密钥替换旧密钥“修复解密”。迁移失败会停止启动，但不会自动恢复所有早先已成功的迁移；不要因此删除表、重置迁移记录或直接将失败标记为成功。
+
+回退必须先停机，恢复**同一备份时点的完整数据库、配置与原密钥**，并运行与其结构兼容的旧版本。仅回退镜像无法恢复已删除字段。备份之后新增的题目、积分流水和查询数据不会自动合并回旧库，需在恢复决策前明确保留方式。
+
+源码环境可用以下命令查看状态；镜像使用其内置启动流程执行迁移，不在生产运行 `migrate dev/reset` 或 `db push`：
+
+```sh
+node --env-file-if-exists=.env node_modules/prisma/build/index.js migrate status
+```
+
+## 向量重建期间
+
+旧向量不会被当成当前有效索引。默认计划会自动派发增量回填；也可在「运维 → 向量索引」手动执行。自动化依赖应用运行、worker 启用、本地模型可读，不能代替模型安装。
+
+相关题型／课程分区有缺失、过期或无法编码题时，RAG 暂时关闭；精确、安全模糊和普通 AI 查询继续工作。种子生成要求所选课程完整有效向量覆盖，覆盖不足会失败并保留任务进度。`pending=0` 不代表所有题可参与 RAG，仍需检查 `skipped` 和具体原因。超长题需人工整理，不能靠重复重建消除。
+
+## 开发新结构
+
+1. 在独立开发库修改 `prisma/schema.prisma`，运行 `migrate dev --create-only --name 名称` 生成迁移；该命令需要独立影子库权限。
+2. 审查 SQL 的字段删除、类型、默认值及数据转换，检查手写 vector/HNSW、触发器与 CHECK 约束。
+3. 用 `migrate deploy` 应用迁移，运行 `generate` 更新客户端，在临时数据库验证升级和重复执行。
+4. 一并提交模型与新增迁移。已应用迁移不改写；新变更新建迁移。
+
+完整命令可加前缀 `node --env-file-if-exists=.env node_modules/prisma/build/index.js`。数据库迁移版本和应用版本分别记录，系统不提供自动降级。
 
 ## 系统版本规则
 
-`package.json` 的 `version` 为唯一应用版本来源，初始为 `1.0.0`。后端 `/api/health` 返回此版本，前端构建时注入同一版本并显示在页脚。
+`package.json` 的 `version` 是唯一应用版本来源，`/api/health` 与前端构建使用同一版本。每次提交递增补丁号 `z`，超过 `20` 时归零并递增次版本号 `y`，主版本 `x` 保持不变。
 
-| 当前版本 | 下一次提交 |
+| 当前 | 下一次提交 |
 | --- | --- |
-| 1.0.0 | 1.0.1 |
-| 1.0.19 | 1.0.20 |
-| 1.0.20 | 1.1.0 |
-| 1.9.20 | 1.10.0 |
+| `1.0.0` | `1.0.1` |
+| `1.0.19` | `1.0.20` |
+| `1.0.20` | `1.1.0` |
 
-`x` 保持不变；每次提交递增 `z`，超过 20 时 `z` 归零、`y` 加一。
-
-运行 `npm install` / `npm ci` 时，prepare 自动安装仓库内 `.githooks/pre-commit`；当前仓库已启用。已有自定义 hooksPath 时安装脚本停止并提示接入，不覆盖旧钩子。使用 `--ignore-scripts` 安装依赖后需手动运行 `npm run prepare` 和 `node --env-file-if-exists=.env node_modules/prisma/build/index.js generate`。
-
-提交钩子根据 HEAD 版本计算下一版本，更新并暂存 `package.json` 与锁文件。提交失败重试不会重复累加；若这两个文件存在尚未暂存的修改，则先停止，避免把未准备提交的修改带入。
-
-不要通过 `--no-verify` 或禁用钩子绕过此规则；Git 本地钩子无法约束主动绕过钩子的提交。提交成功后重新构建，发布产物才能显示新版本。系统版本递增不会改变数据库迁移历史。
+`npm ci/install` 的 prepare 安装仓库 `.githooks/pre-commit`。已有自定义 hooksPath 时不覆盖；使用 `--ignore-scripts` 后需手动执行 `npm run prepare` 和 Prisma `generate`。提交钩子根据 HEAD 版本更新并暂存 `package.json` 及锁文件；两文件有未暂存修改时停止，失败重试不重复累加。不要绕过钩子，提交后重新构建发布产物。
 
 ## 验证
 
-常规 `npm test` 覆盖版本进位及真实隔离 Git 提交。数据库集成和迁移测试分别使用自动创建的临时 PostgreSQL 容器，不读取业务库配置。
+`npm test` 包含迁移测试；也可单独执行：
 
-迁移测试已纳入 `npm test`，也可单独执行 `node --import tsx --test tests/migrations.test.ts`。测试在独立临时容器内验证初始化、重复迁移、旧库接管、数据保留和后续版本更新，结束自动删除临时容器，无需测试配置或重置开关。
+```sh
+node --import tsx --test tests/migrations.test.ts
+```
+
+数据库测试自动使用独立临时 PostgreSQL，不读取业务 `.env`。自动测试不能替代正式升级前对实际备份的恢复副本验证。

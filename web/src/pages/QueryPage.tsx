@@ -1,21 +1,38 @@
+import type {Page} from '../../../shared/contracts';
+import type {Token,Usage,QueryResult} from '../../../shared/api-types';
 /**
  * @file QueryPage.tsx
  * @project ocs-answer-hub
  * @module 查题工作台
- * @description 多用户统一查题、剩余额度与个人历史页面。
- * @logic 通过共享会话与请求模块完成页面操作，业务状态由页面维护，展示 AI 专用 RAG 状态及历史记录入口。
- * @dependencies React, components/ui, context/app, lib/api
- * @index_tags query, page
+ * @description 使用本人凭证查题并展示答案、消费结果和调用链。
+ * @logic 凭证选择与题目表单提交服务端；仅成功答案扣1积分，失败保留原输入。
+ * @dependencies react-hook-form, zod, hooks/use-resource, components/ui
+ * @index_tags query, credentials, credits
  * @author holic512
  */
-import { useState,useEffect } from 'react';
+import {useState} from 'react';
 import {Link} from 'react-router';
+import {Controller,useForm} from 'react-hook-form';
+import {zodResolver} from '@hookform/resolvers/zod';
+import {z} from 'zod';
+import {Search,Copy} from 'lucide-react';
+import {Button} from '../components/ui/button';
+import {Input,Textarea} from '../components/ui/input';
+import {Select} from '../components/ui/select';
+import {Badge} from '../components/ui/badge';
+import {FormField} from '../components/ui/form';
+import {Feedback} from '../components/ui/alert';
+import {Empty,Heading,labels} from '../components/workspace';
 import {QueryTrace} from '../components/QueryTrace';
-import {failureLabel,queryStatuses} from '../lib/query-status';
-import { Badge } from '../components/ui/badge';
-import { Button } from '../components/ui/button';
-import { Empty,Field,Heading,Icon,QuestionFields } from '../components/workspace';
-import {Input} from '../components/ui/input';
-import { api } from '../lib/api';
-import { useApp } from '../context/app';
-export default function QueryPage(){const {run}=useApp();const[result,setResult]=useState<any>(null),[pending,setPending]=useState(false),[usage,setUsage]=useState<any>(null),[recent,setRecent]=useState<any[]>([]);async function refresh(){const [u,r]=await Promise.all([api('/workspace/usage'),api('/workspace/recent')]);setUsage(u);setRecent(r.items);}useEffect(()=>{void run(refresh);},[]);return <><Heading title="查题工作台"><span className="query-usage" role="status">{usage?`今日已用 ${usage.day_count} / ${usage.daily_limit} 次 · 剩余 ${usage.remaining} 次 · 每分钟 ${usage.rpm} 次`:'正在读取额度…'}</span></Heading><div className="query-grid"><section className="card"><form onSubmit={e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));setPending(true);run(async()=>{setResult(null);try{setResult(await api('/workspace/query','POST',data));}finally{await refresh();}}).finally(()=>setPending(false))}}><QuestionFields/><Field label="课程（可选）"><Input name="course" maxLength={200}/></Field><Button className="primary full" disabled={pending}><Icon name="query" size={17}/>{pending?'按优先级检索中…':'查找答案'}</Button></form></section><section className="card result-card"><div className="card-title"><h2>检索结果</h2>{result&&<Badge tone={result.code===1?'green':'gray'}>{result.code===1?'找到答案':'未命中'}</Badge>}</div>{pending?<div className="empty"><div className="spinner"/><strong>正在逐级查找</strong><span>本地优先，未命中时自动调用后续来源。</span></div>:result?<><div className="answer-box"><small>{result.code===1?'答案':'检索状态'}</small><h3>{result.answer??result.message}</h3>{result.code===1&&<p>{result.source} · {result.verified?'人工已核验':'未核验，请自行确认'} · {result.durationMs} ms</p>}</div>{result.code!==1&&<p className="history-failure">{failureLabel(result.failureCode)}</p>}<h4>检索链路</h4><QueryTrace attempts={result.attempts}/></>:<Empty text="等待查询" detail="填写题目后查看答案及检索过程。"/>}</section></div><section className="card"><div className="card-title"><h2>最近查题</h2><Button asChild><Link to="/history">查看全部</Link></Button></div>{recent.length?<div className="table-scroll"><table><thead><tr><th>题目</th><th>状态</th><th>来源</th><th>时间</th></tr></thead><tbody>{recent.map(r=><tr key={r.id}><td>{r.title}</td><td>{queryStatuses[r.status]??r.status}</td><td>{r.source??'—'}</td><td>{new Date(r.created_at).toLocaleString()}</td></tr>)}</tbody></table></div>:<Empty text="还没有查题记录" detail="提交题目后，这里会显示你的检索记录。"/>}</section></>}
+import {useResource,useAction} from '../hooks/use-resource';
+import {api} from '../lib/api';
+import {failureLabel} from '../lib/query-status';
+const schema=z.object({tokenId:z.string().min(1,'请选择有效凭证'),title:z.string().trim().min(1,'请输入题目').max(8000),type:z.string(),options:z.string(),course:z.string().max(200),images:z.string()});
+type Values=z.infer<typeof schema>;
+export default function QueryPage(){
+ const tokens=useResource<Page<Token>>('/workspace/tokens?pageSize=100'),usage=useResource<Usage>('/workspace/usage'),action=useAction(),copy=useAction();const [result,setResult]=useState<QueryResult|null>(null);
+ const form=useForm<Values>({resolver:zodResolver(schema),defaultValues:{tokenId:'',title:'',type:'single',options:'',course:'',images:''}});
+ const valid=(tokens.data?.items??[]).filter((t)=>!t.revoked&&(!t.expires_at||new Date(t.expires_at)>new Date()));
+ async function submit(data:Values){setResult(null);await action.execute(async()=>{const answer=await api<QueryResult>('/workspace/query','POST',{...data,images:data.images.split('\n').map(x=>x.trim()).filter(Boolean)});setResult(answer);await usage.reload();});}
+ return <><Heading title="查题工作台" desc="先检索本地题库，未命中时由 AI 作答。"><div className="query-usage">可用 <strong>{usage.data?.available??'—'}</strong> 积分<span>成功一次使用 1 积分</span></div></Heading><Feedback error={tokens.error||usage.error}/><div className="query-grid"><section className="card"><form onSubmit={form.handleSubmit(submit)} noValidate><FormField label="调用凭证" hint="网页查询同样使用凭证的每日和每分钟限额。" error={form.formState.errors.tokenId?.message}><Controller name="tokenId" control={form.control} render={({field})=><Select value={field.value} onChange={e=>field.onChange(e.target.value)}><option value="">请选择凭证</option>{valid.map((t)=><option key={t.id} value={t.id}>{t.name} · {t.daily_limit} 次/日</option>)}</Select>}/></FormField>{!tokens.loading&&!valid.length&&<p className="inline-note">还没有有效凭证，先<Link to="/tokens">创建调用凭证</Link>。</p>}<div className="form-grid"><FormField label="题型"><Controller name="type" control={form.control} render={({field})=><Select value={field.value} onChange={e=>field.onChange(e.target.value)}>{Object.entries(labels).map(([k,v])=><option value={k} key={k}>{v}</option>)}</Select>}/></FormField><FormField label="课程（可选）" error={form.formState.errors.course?.message}><Input {...form.register('course')} placeholder="用于匹配本地题目"/></FormField></div><FormField label="题目" error={form.formState.errors.title?.message}><Textarea rows={4} {...form.register('title')} placeholder="输入完整题干，保留数字、单位和否定词"/></FormField><FormField label="选项" hint="单选和多选每行一个选项，判断与填空可留空。"><Textarea rows={4} {...form.register('options')} placeholder={'A. 选项一\nB. 选项二'}/></FormField><details className="advanced-fields"><summary>图片题设置</summary><FormField label="图片地址" hint="每行一个 HTTP / HTTPS 地址，AI 配置需支持图片。"><Textarea rows={2} {...form.register('images')}/></FormField></details><Feedback error={action.error}/><Button variant="default" className="full" disabled={action.pending||!valid.length}><Search size={16}/>{action.pending?'正在查题…':'查询答案'}</Button></form></section><section className="card result-card" aria-live="polite"><div className="card-title"><h2>查询结果</h2>{result&&<Badge tone={result.code===1?'green':'amber'}>{result.code===1?'查询成功':'未获得答案'}</Badge>}</div>{action.pending?<div className="empty" role="status"><div className="spinner"/><strong>正在检索与作答</strong><span>请保留当前页面。</span></div>:result?<><div className="answer-box"><small>{result.code===1?'答案':failureLabel(result.failureCode)}</small><h3>{result.answer??result.message??'请调整题目或稍后重试。'}</h3>{result.code===1&&<div className="section-toolbar"><span className="muted">{result.source} · {result.durationMs} ms · 消费 1 积分</span><Button size="sm" aria-label="复制答案" onClick={()=>copy.execute(()=>navigator.clipboard.writeText(result.answer??''),'答案已复制')}><Copy size={15}/>复制</Button></div>}</div><Feedback error={copy.error} message={copy.message}/><details className="advanced-fields"><summary>查看查询链路</summary><QueryTrace attempts={result.attempts}/>{result.requestId&&<p className="muted mono">请求编号：{result.requestId}</p>}</details><Button asChild variant="outline"><Link to="/history">查看我的查询记录</Link></Button></>:<Empty text="输入题目开始查询" detail="成功返回答案后才会消费积分。"/>}</section></div></>;
+}

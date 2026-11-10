@@ -12,7 +12,7 @@ import {validateProvider} from '../server/providers.js';
 const root=fileURLToPath(new URL('../',import.meta.url));
 
 test('documented provider examples match the actual adapters',async()=>{
- for(const [name,kind] of [['yanxi','yanxi'],['http','http'],['ai-chat','ai'],['ai-responses','ai']] as const){
+ for(const [name,kind] of [['ai-chat','ai'],['ai-responses','ai']] as const){
   const config=JSON.parse(await fs.readFile(path.join(root,'examples/providers',name+'.json'),'utf8'));
   assert.doesNotThrow(()=>validateProvider(kind,config),name);
  }
